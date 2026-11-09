@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>Carmel Monitor</title>
+  <link rel="stylesheet" href="/static/styles.css?v=20261109-5">
+  <script src="/static/chart.umd.min.js" defer></script>
+  <script src="/static/app.js?v=20261109-6" defer></script>
+</head>
+<body>
+  <div class="shell">
+    <header class="topbar">
+      <div class="brand">
+        <div class="brand-mark" aria-hidden="true">C</div>
+        <div>
+          <p class="eyebrow">Infraestrutura</p>
+          <h1>Carmel Monitor</h1>
+        </div>
+      </div>
+      <div class="connection" id="connection-status" role="status">
+        <span class="connection-dot"></span>
+        <span>Conectando...</span>
+      </div>
+    </header>
+
+    <main>
+      <section class="summary" aria-label="Resumo do ambiente">
+        <article class="summary-card">
+          <span>Agentes</span>
+          <strong id="total-agents">0</strong>
+        </article>
+        <article class="summary-card online-summary">
+          <span>Online</span>
+          <strong id="online-agents">0</strong>
+        </article>
+        <article class="summary-card offline-summary">
+          <span>Offline</span>
+          <strong id="offline-agents">0</strong>
+        </article>
+      </section>
+
+      <section class="agents-section" aria-labelledby="agents-title">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Visão geral</p>
+            <h2 id="agents-title">Máquinas monitoradas</h2>
+          </div>
+          <div class="agent-controls">
+            <label class="group-selector">
+              <span>Grupo</span>
+              <select id="group-select">
+                <option value="all">Todos os grupos</option>
+              </select>
+            </label>
+            <span class="updated-at" id="updated-at">Aguardando dados</span>
+          </div>
+        </div>
+        <div class="host-toolbar">
+          <label class="search-field">
+            <span class="sr-only">Buscar host</span>
+            <input id="host-search" type="search" placeholder="Buscar por hostname..." autocomplete="off">
+          </label>
+          <label class="status-selector">
+            <span class="sr-only">Filtrar por status</span>
+            <select id="status-select">
+              <option value="all">Todos os status</option>
+              <option value="online">Online</option>
+              <option value="offline">Offline</option>
+            </select>
+          </label>
+        </div>
+
+        <div class="host-table-wrap" id="host-table-wrap">
+          <table class="host-table">
+            <thead>
+              <tr>
+                <th data-sort-column="name"><button class="sort-button active" data-sort="name">Host</button></th>
+                <th data-sort-column="status"><button class="sort-button" data-sort="status">Status</button></th>
+                <th data-sort-column="cpu"><button class="sort-button" data-sort="cpu">CPU</button></th>
+                <th data-sort-column="memory"><button class="sort-button" data-sort="memory">Memória</button></th>
+                <th data-sort-column="disk"><button class="sort-button" data-sort="disk">Disco</button></th>
+                <th data-sort-column="last_seen"><button class="sort-button" data-sort="last_seen">Último contato</button></th>
+                <th class="actions-column">Ações</th>
+              </tr>
+            </thead>
+            <tbody id="host-table-body"></tbody>
+          </table>
+        </div>
+
+        <nav class="pagination" id="pagination" aria-label="Paginação dos hosts">
+          <span id="pagination-summary">0 hosts</span>
+          <div>
+            <button type="button" id="previous-page">Anterior</button>
+            <span id="page-number">Página 1</span>
+            <button type="button" id="next-page">Próxima</button>
+          </div>
+        </nav>
+        <div class="empty-state" id="empty-state" hidden>
+          <strong>Nenhum agent conectado</strong>
+          <span>Execute o monitor-agent.exe para começar.</span>
+        </div>
+      </section>
+
+      <section class="details" id="details" aria-labelledby="details-title" hidden>
+        <div class="section-heading details-heading">
+          <div>
+            <p class="eyebrow">Histórico</p>
+            <h2 id="details-title">Métricas</h2>
+            <p class="details-host" id="details-host"></p>
+          </div>
+          <label class="period-selector">
+            <span>Período</span>
+            <select id="period-select">
+              <option value="15">15 minutos</option>
+              <option value="60" selected>1 hora</option>
+              <option value="360">6 horas</option>
+              <option value="1440">24 horas</option>
+            </select>
+          </label>
+        </div>
+
+        <div class="chart-grid">
+          <article class="chart-card">
+            <div class="chart-title"><span class="metric-dot cpu"></span>CPU <small>%</small></div>
+            <div class="chart-wrap"><canvas id="cpu-chart"></canvas></div>
+          </article>
+          <article class="chart-card">
+            <div class="chart-title"><span class="metric-dot memory"></span>Memória <small>%</small></div>
+            <div class="chart-wrap"><canvas id="memory-chart"></canvas></div>
+          </article>
+          <article class="chart-card">
+            <div class="chart-title"><span class="metric-dot disk"></span>Disco <small>%</small></div>
+            <div class="chart-wrap"><canvas id="disk-chart"></canvas></div>
+          </article>
+          <article class="chart-card">
+            <div class="chart-title"><span class="metric-dot network"></span>Rede <small>Mbps</small></div>
+            <div class="chart-wrap"><canvas id="network-chart"></canvas></div>
+          </article>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <dialog class="edit-dialog" id="edit-dialog">
+    <form id="edit-agent-form">
+      <div class="dialog-heading">
+        <div>
+          <p class="eyebrow">Gerenciar host</p>
+          <h2>Editar host</h2>
+        </div>
+        <button type="button" class="dialog-close" id="close-edit-dialog" aria-label="Fechar">×</button>
+      </div>
+      <input type="hidden" id="edit-agent-id">
+      <label>
+        <span>Nome</span>
+        <input id="edit-agent-name" type="text" required maxlength="255">
+      </label>
+      <label>
+        <span>Grupo</span>
+        <input id="edit-agent-group" type="text" required maxlength="100">
+      </label>
+      <div class="dialog-actions">
+        <button type="button" class="secondary-button" id="cancel-edit-dialog">Cancelar</button>
+        <button type="submit" class="primary-button">Salvar alterações</button>
+      </div>
+    </form>
+  </dialog>
+</body>
+</html>

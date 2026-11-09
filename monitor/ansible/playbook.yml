@@ -1,0 +1,209 @@
+---
+# Instala (ou remove) o monitor-agent em hosts Windows, incluindo PDVs.
+#
+# O agente roda em segundo plano, sem janela e sem usuário logado:
+# tarefa agendada do Windows, conta SYSTEM, prioridade baixa, iniciada 1 min
+# após o boot (para não competir com a abertura do PDV) e reiniciada se cair.
+#
+# O executável vem do próprio repositório (files/monitor-agent.exe) e NÃO contém
+# o token. O token é passado como variável secreta (`monitor_token`) e gravado no
+# config.json do PDV, numa pasta acessível só por SYSTEM e Administradores.
+#
+# Atualizar o agente:
+#   cd monitor/agent
+#   go build -ldflags "-s -w" -o ../ansible/files/monitor-agent.exe .   # sem token!
+#   git add ansible/files/monitor-agent.exe && git commit && git push
+#   e rodar o template de instalação de novo.
+#
+# Requisitos (quem executa o Ansible / imagem do Semaphore):
+#   pywinrm  e  ansible-galaxy collection install ansible.windows
+#
+# Variáveis:
+#   monitor_group   grupo exibido no dashboard (obrigatório ao instalar)
+#   monitor_token   token dos agentes, o mesmo AGENT_TOKEN da API (obrigatório, secreto)
+#   monitor_state   present (padrão) | absent
+#
+# No Semaphore UI:
+#   - monitor_token: Variable Group secreto (ou Secret Variable do template). Nunca no git.
+#   - monitor_group: Survey Variable do Task Template, ou variável por grupo no Inventory.
+#   - Usuário e senha do WinRM: Key Store (Login with password).
+#   - Inventory: grupo `windows` com ansible_connection=winrm e
+#     ansible_winrm_transport=ntlm.
+#
+# Linha de comando (fora do Semaphore):
+#   ansible-playbook -i inventory.ini playbook.yml \
+#     -e monitor_group="Hotel Praia" -e monitor_token="$AGENT_TOKEN"
+#   ansible-playbook -i inventory.ini playbook.yml -e monitor_state=absent
+#
+# Rodar de novo é seguro: só altera o que mudou.
+
+- name: Monitor-agent em hosts Windows
+  hosts: windows
+  gather_facts: false
+  serial: 10            # lotes pequenos: um erro não derruba todos os PDVs de uma vez
+  max_fail_percentage: 20
+
+  vars:
+    monitor_state: present            # present | absent
+    monitor_group: ""
+    monitor_token: ""
+    monitor_api_url: https://monitoramento-carmel.fastapicloud.dev
+    monitor_interval_seconds: 60
+    monitor_install_dir: 'C:\ProgramData\CarmelMonitor'
+    monitor_task_name: CarmelMonitorAgent
+    monitor_exe_local: "{{ playbook_dir }}/files/monitor-agent.exe"
+    monitor_exe_remote: "{{ monitor_install_dir }}\\monitor-agent.exe"
+    monitor_config_remote: "{{ monitor_install_dir }}\\config.json"
+    monitor_process: monitor-agent    # nome do processo, sem .exe
+
+  tasks:
+    # ------------------------------------------------------------------ remoção
+    - name: Remover o agente
+      when: monitor_state == 'absent'
+      block:
+        - name: Parar tarefa e processo
+          ansible.windows.win_shell: |
+            Stop-ScheduledTask -TaskName '{{ monitor_task_name }}' -ErrorAction SilentlyContinue
+            Stop-Process -Name '{{ monitor_process }}' -Force -ErrorAction SilentlyContinue
+          changed_when: false
+
+        - name: Remover tarefa agendada
+          ansible.windows.win_scheduled_task:
+            name: "{{ monitor_task_name }}"
+            state: absent
+
+        - name: Remover arquivos do agente
+          ansible.windows.win_file:
+            path: "{{ monitor_install_dir }}"
+            state: absent
+
+    # --------------------------------------------------------------- instalação
+    - name: Instalar o agente
+      when: monitor_state == 'present'
+      block:
+        - name: Exigir grupo e token
+          ansible.builtin.assert:
+            that:
+              - monitor_group | length > 0
+              - monitor_token | length > 0
+            fail_msg: >-
+              Informe monitor_group (nome do grupo) e monitor_token (AGENT_TOKEN da API).
+          no_log: true
+
+        - name: Conferir o executável do repositório
+          ansible.builtin.stat:
+            path: "{{ monitor_exe_local }}"
+            checksum_algorithm: sha256
+          delegate_to: localhost
+          become: false
+          run_once: true
+          register: exe_local
+
+        - name: Falhar se o executável não existir
+          ansible.builtin.assert:
+            that: exe_local.stat.exists
+            fail_msg: "Executável não encontrado: {{ monitor_exe_local }}"
+          run_once: true
+
+        # A pasta guarda o token do agente: só SYSTEM e Administradores acessam.
+        # SIDs (S-1-5-18 e S-1-5-32-544) funcionam em Windows em qualquer idioma.
+        - name: Criar pasta de instalação
+          ansible.windows.win_file:
+            path: "{{ monitor_install_dir }}"
+            state: directory
+
+        - name: Restringir acesso à pasta
+          ansible.windows.win_command: >-
+            icacls "{{ monitor_install_dir }}" /inheritance:r
+            /grant:r "*S-1-5-18:(OI)(CI)F" "*S-1-5-32-544:(OI)(CI)F"
+          changed_when: false
+
+        - name: Ler o executável instalado
+          ansible.windows.win_stat:
+            path: "{{ monitor_exe_remote }}"
+            checksum_algorithm: sha256
+          register: exe_remote
+
+        - name: Detectar se o executável precisa ser atualizado
+          ansible.builtin.set_fact:
+            exe_changed: >-
+              {{ not exe_remote.stat.exists
+                 or exe_remote.stat.checksum != exe_local.stat.checksum }}
+
+        - name: Parar o agente antes de trocar o executável
+          ansible.windows.win_shell: |
+            Stop-ScheduledTask -TaskName '{{ monitor_task_name }}' -ErrorAction SilentlyContinue
+            Stop-Process -Name '{{ monitor_process }}' -Force -ErrorAction SilentlyContinue
+            Start-Sleep -Seconds 2
+          when: exe_changed and exe_remote.stat.exists
+          changed_when: false
+
+        - name: Copiar o executável
+          ansible.windows.win_copy:
+            src: "{{ monitor_exe_local }}"
+            dest: "{{ monitor_exe_remote }}"
+          when: exe_changed
+
+        # Configuração completa: o agente não precisa reescrevê-la ao iniciar.
+        - name: Gravar o config.json
+          ansible.windows.win_copy:
+            content: >-
+              {{ {'api_url': monitor_api_url,
+                  'group': monitor_group,
+                  'token': monitor_token,
+                  'interval_seconds': monitor_interval_seconds}
+                 | to_nice_json(indent=2) }}
+            dest: "{{ monitor_config_remote }}"
+          register: config
+          no_log: true
+
+        - name: Registrar tarefa agendada
+          ansible.windows.win_scheduled_task:
+            name: "{{ monitor_task_name }}"
+            description: Envia métricas de hardware ao dashboard de monitoramento Carmel.
+            actions:
+              - path: "{{ monitor_exe_remote }}"
+                working_directory: "{{ monitor_install_dir }}"
+            triggers:
+              - type: boot
+                delay: PT1M
+            username: SYSTEM
+            logon_type: service_account
+            run_level: highest
+            hidden: true
+            priority: 7                          # abaixo do normal: PDV tem preferência
+            execution_time_limit: PT0S           # sem limite (o padrão do Windows mata em 72 h)
+            restart_count: 999
+            restart_interval: PT1M
+            multiple_instances: 2                # nunca duas cópias ao mesmo tempo
+            start_when_available: true
+            disallow_start_if_on_batteries: false
+            stop_if_going_on_batteries: false
+            state: present
+            enabled: true
+          register: task
+
+        - name: Reiniciar o agente após mudança de executável, config ou tarefa
+          ansible.windows.win_shell: |
+            Stop-ScheduledTask -TaskName '{{ monitor_task_name }}' -ErrorAction SilentlyContinue
+            Stop-Process -Name '{{ monitor_process }}' -Force -ErrorAction SilentlyContinue
+            Start-ScheduledTask -TaskName '{{ monitor_task_name }}'
+          when: exe_changed or config is changed or task is changed
+
+        - name: Garantir que o agente está em execução
+          ansible.windows.win_shell: |
+            if (-not (Get-Process -Name '{{ monitor_process }}' -ErrorAction SilentlyContinue)) {
+              Start-ScheduledTask -TaskName '{{ monitor_task_name }}'
+              'started'
+            }
+          register: ensure_running
+          changed_when: "'started' in ensure_running.stdout"
+
+        - name: Confirmar que o processo está ativo
+          ansible.windows.win_shell: |
+            if (Get-Process -Name '{{ monitor_process }}' -ErrorAction SilentlyContinue) { 'ok' } else { exit 1 }
+          register: running
+          until: running.rc == 0
+          retries: 6
+          delay: 5
+          changed_when: false
