@@ -115,7 +115,7 @@
     display_name: Carmel Monitor Agent
     description: Coleta métricas do equipamento para o Monitoramento Carmel.
     path: '"{{ monitor_agent_binary_path }}"'
-    username: '{{ monitor_agent_builtin_accounts.result.local_service }}'
+    username: NT AUTHORITY\LocalService
     start_mode: delayed
     state: started
     failure_actions:
