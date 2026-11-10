@@ -117,6 +117,8 @@
     path: '"{{ monitor_agent_binary_path }}"'
     username: NT AUTHORITY\LocalService
     start_mode: delayed
+    dependencies: []
+    dependency_action: set
     failure_actions:
       - type: restart
         delay_ms: 5000
