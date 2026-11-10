@@ -4,6 +4,10 @@
   gather_facts: false
   serial: "{{ rollout_batch | default('20%') }}"
   max_fail_percentage: 0
-  roles:
-    - role: monitor_agent
-      tasks_from: uninstall
+  tasks:
+    # tasks_from só funciona com import_role/include_role; em "roles:" seria
+    # ignorado e o role executaria tasks/main.yml (instalação).
+    - name: Executar a desinstalação do agente
+      ansible.builtin.import_role:
+        name: monitor_agent
+        tasks_from: uninstall
