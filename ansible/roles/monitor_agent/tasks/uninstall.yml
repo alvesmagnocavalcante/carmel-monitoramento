@@ -12,22 +12,49 @@
     name: '{{ monitor_agent_service_name }}'
   register: monitor_agent_service_before_removal
 
-- name: Parar serviço do agente
-  ansible.windows.win_service:
-    name: '{{ monitor_agent_service_name }}'
-    state: stopped
-  when: monitor_agent_service_before_removal.exists
+- name: Parar e remover o serviço do agente (sc.exe, somente este serviço)
+  ansible.windows.win_powershell:
+    error_action: stop
+    parameters:
+      ServiceName: '{{ monitor_agent_service_name }}'
+    script: |
+      param([string] $ServiceName)
 
-- name: Remover serviço do agente
-  ansible.windows.win_service:
-    name: '{{ monitor_agent_service_name }}'
-    state: absent
+      if ($ServiceName -ne 'CarmelMonitorAgent') { throw "Serviço inesperado: $ServiceName" }
+      $Ansible.Changed = $false
+      $svc = Get-CimInstance Win32_Service -Filter "Name='$ServiceName'"
+      if (-not $svc) { return }
+      if ($svc.PathName -notlike '*Carmel Monitor*') {
+          throw "Serviço aponta para outro caminho, nada foi removido: $($svc.PathName)"
+      }
+
+      if ($svc.State -ne 'Stopped') {
+          & sc.exe stop $ServiceName | Out-Null
+          $deadline = (Get-Date).AddSeconds(30)
+          while ((Get-Date) -lt $deadline) {
+              $state = (Get-CimInstance Win32_Service -Filter "Name='$ServiceName'").State
+              if ($state -eq 'Stopped') { break }
+              Start-Sleep -Seconds 1
+          }
+          if ($state -ne 'Stopped') { throw "O serviço não parou em 30s (estado: $state)" }
+      }
+
+      & sc.exe delete $ServiceName | Out-Null
+      $deadline = (Get-Date).AddSeconds(20)
+      while ((Get-CimInstance Win32_Service -Filter "Name='$ServiceName'") -and (Get-Date) -lt $deadline) {
+          Start-Sleep -Seconds 1
+      }
+      $Ansible.Changed = $true
   when: monitor_agent_service_before_removal.exists
 
 - name: Remover arquivos do agente
   ansible.windows.win_file:
     path: '{{ monitor_agent_install_dir }}'
     state: absent
+  register: monitor_agent_remove_files
+  retries: 5
+  delay: 3
+  until: monitor_agent_remove_files is succeeded
 
 - name: Consultar estado final do serviço
   ansible.windows.win_service_info:
