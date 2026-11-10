@@ -1,0 +1,9 @@
+---
+- name: Desinstalar o agente Carmel
+  hosts: windows
+  gather_facts: false
+  serial: "{{ rollout_batch | default('20%') }}"
+  max_fail_percentage: 0
+  roles:
+    - role: monitor_agent
+      tasks_from: uninstall

@@ -108,6 +108,22 @@ O role é idempotente: baixa a versão indicada da release, valida seu hash, rei
 somente quando binário ou configuração mudam, mantém reinício automático após
 falha e remove a versão anterior somente depois que o serviço novo estiver ativo.
 
+### Atualizar ou desinstalar o agente
+
+Para atualizar, publique uma nova tag `agent-vX.Y.Z`, altere
+`monitor_agent_release_tag` no Variable Group e execute novamente
+`ansible/playbooks/install_agent.yml`. Não desinstale antes de atualizar.
+
+Para remover completamente o serviço e `C:\Program Files\Carmel Monitor`, crie no
+Semaphore um template separado para:
+
+```text
+ansible/playbooks/uninstall_agent.yml
+```
+
+Execute primeiro com limite para um equipamento. O playbook de desinstalação não
+utiliza token nem tag de release.
+
 ## Consumo do Turso
 
 Cada heartbeat grava 1 linha. Com 50 PCs a 60 s são ~2,2M escritas/mês, mais a limpeza de retenção (limite do plano: 10M).

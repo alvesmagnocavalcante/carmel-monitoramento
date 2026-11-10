@@ -1,0 +1,48 @@
+---
+- name: Validar destino da desinstalação
+  ansible.builtin.assert:
+    that:
+      - monitor_agent_service_name == 'CarmelMonitorAgent'
+      - monitor_agent_install_dir == 'C:\Program Files\Carmel Monitor'
+    fail_msg: Caminho ou nome do serviço inesperado; desinstalação cancelada.
+    quiet: true
+
+- name: Consultar serviço do agente
+  ansible.windows.win_service_info:
+    name: '{{ monitor_agent_service_name }}'
+  register: monitor_agent_service_before_removal
+
+- name: Parar serviço do agente
+  ansible.windows.win_service:
+    name: '{{ monitor_agent_service_name }}'
+    state: stopped
+  when: monitor_agent_service_before_removal.exists
+
+- name: Remover serviço do agente
+  ansible.windows.win_service:
+    name: '{{ monitor_agent_service_name }}'
+    state: absent
+  when: monitor_agent_service_before_removal.exists
+
+- name: Remover arquivos do agente
+  ansible.windows.win_file:
+    path: '{{ monitor_agent_install_dir }}'
+    state: absent
+
+- name: Consultar estado final do serviço
+  ansible.windows.win_service_info:
+    name: '{{ monitor_agent_service_name }}'
+  register: monitor_agent_service_after_removal
+
+- name: Consultar diretório final do agente
+  ansible.windows.win_stat:
+    path: '{{ monitor_agent_install_dir }}'
+  register: monitor_agent_directory_after_removal
+
+- name: Confirmar desinstalação
+  ansible.builtin.assert:
+    that:
+      - not monitor_agent_service_after_removal.exists
+      - not monitor_agent_directory_after_removal.stat.exists
+    fail_msg: O serviço ou os arquivos do agente ainda existem.
+    quiet: true
