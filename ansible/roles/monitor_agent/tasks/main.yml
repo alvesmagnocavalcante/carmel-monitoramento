@@ -71,6 +71,23 @@
   no_log: true
   notify: restart carmel agent
 
+- name: Resolver contas internas do Windows pelo SID
+  ansible.windows.win_powershell:
+    script: |
+      $Ansible.Changed = $false
+
+      function Resolve-WellKnownSid([string] $Sid) {
+          $identity = [System.Security.Principal.SecurityIdentifier]::new($Sid)
+          return $identity.Translate([System.Security.Principal.NTAccount]).Value
+      }
+
+      $Ansible.Result = @{
+          system         = Resolve-WellKnownSid 'S-1-5-18'
+          local_service  = Resolve-WellKnownSid 'S-1-5-19'
+          administrators = Resolve-WellKnownSid 'S-1-5-32-544'
+      }
+  register: monitor_agent_builtin_accounts
+
 - name: Autorizar leitura da configuração ao serviço
   ansible.windows.win_acl:
     path: '{{ monitor_agent_config_path }}'
@@ -79,11 +96,11 @@
     type: allow
     state: present
   loop:
-    - user: SYSTEM
+    - user: '{{ monitor_agent_builtin_accounts.result.system }}'
       rights: FullControl
-    - user: BUILTIN\Administrators
+    - user: '{{ monitor_agent_builtin_accounts.result.administrators }}'
       rights: FullControl
-    - user: NT AUTHORITY\LOCAL SERVICE
+    - user: '{{ monitor_agent_builtin_accounts.result.local_service }}'
       rights: Read
 
 - name: Remover permissões herdadas da configuração
@@ -98,7 +115,7 @@
     display_name: Carmel Monitor Agent
     description: Coleta métricas do equipamento para o Monitoramento Carmel.
     path: '"{{ monitor_agent_binary_path }}"'
-    username: NT AUTHORITY\LocalService
+    username: '{{ monitor_agent_builtin_accounts.result.local_service }}'
     start_mode: delayed
     state: started
     failure_actions:
