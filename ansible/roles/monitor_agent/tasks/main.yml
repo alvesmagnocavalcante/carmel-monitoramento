@@ -135,6 +135,19 @@
         state: started
 
   rescue:
+    - name: Capturar erro real do Windows ao iniciar (somente este serviço)
+      ansible.windows.win_shell: |
+        sc.exe start {{ monitor_agent_service_name }}
+        "exit=$LASTEXITCODE"
+        sc.exe queryex {{ monitor_agent_service_name }}
+      register: monitor_agent_sc_start
+      changed_when: false
+      failed_when: false
+
+    - name: Mostrar erro real do sc start
+      ansible.builtin.debug:
+        msg: '{{ monitor_agent_sc_start.stdout_lines | default([]) }}'
+
     - name: Coletar diagnóstico do Service Control Manager
       ansible.windows.win_powershell:
         error_action: stop
