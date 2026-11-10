@@ -86,11 +86,11 @@ ACL limitada ao serviço, `SYSTEM` e administradores.
 
    ```yaml
    monitor_agent_release_tag: agent-v1.0.0
-   monitor_agent_token: TOKEN_DA_API
    ```
 
-   Marque o ambiente como secreto. `monitor_agent_group` é definido por grupo no
-   inventário e pode ser sobrescrito por host.
+   Na aba **Secrets**, cadastre `MONITOR_AGENT_TOKEN` como **Environment variable**
+   com o mesmo valor de `AGENT_TOKEN` da API. `monitor_agent_group` é definido por
+   grupo no inventário e pode ser sobrescrito por host.
 5. Crie um template apontando para `ansible/playbooks/install_agent.yml` e selecione
    o inventário, o repositório e o ambiente cadastrados.
 6. Execute primeiro limitando a um PDV piloto. Depois remova o limite; o rollout é

@@ -8,5 +8,5 @@ monitor_agent_interval_seconds: 60
 # As releases são publicadas pelo workflow .github/workflows/release-agent.yml.
 monitor_agent_github_repository: alvesmagnocavalcante/carmel-monitoramento
 monitor_agent_release_tag: ''
-monitor_agent_token: ''
+monitor_agent_token: "{{ lookup('ansible.builtin.env', 'MONITOR_AGENT_TOKEN') }}"
 monitor_agent_group: ''

@@ -20,7 +20,8 @@
     that:
       - monitor_agent_token | trim | length > 0
     fail_msg: >-
-      monitor_agent_token não foi informado no Variable Group do Semaphore.
+      Cadastre MONITOR_AGENT_TOKEN como Secret do tipo Environment variable no
+      Variable Group do Semaphore ou informe monitor_agent_token como variável Ansible.
     quiet: true
 
 - name: Validar grupo do equipamento
