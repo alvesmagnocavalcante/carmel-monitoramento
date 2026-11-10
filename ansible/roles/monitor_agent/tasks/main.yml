@@ -150,7 +150,47 @@
       ansible.builtin.debug:
         msg: '{{ monitor_agent_sc_start.stdout_lines | default([]) }}'
 
+    - name: Recriar somente este serviço do zero com sc.exe e tentar iniciar
+      ansible.windows.win_powershell:
+        error_action: stop
+        parameters:
+          ServiceName: '{{ monitor_agent_service_name }}'
+          BinaryPath: '{{ monitor_agent_binary_path }}'
+        script: |
+          param([string] $ServiceName, [string] $BinaryPath)
+
+          # Segurança: só mexe no serviço Carmel e somente se ele estiver parado
+          # e apontar para o diretório de instalação do agente.
+          if ($ServiceName -ne 'CarmelMonitorAgent') { throw "Serviço inesperado: $ServiceName" }
+          $svc = Get-CimInstance Win32_Service -Filter "Name='$ServiceName'"
+          if ($svc) {
+              if ($svc.State -ne 'Stopped') { throw "Serviço não está parado: $($svc.State)" }
+              if ($svc.PathName -notlike '*Carmel Monitor*') { throw "Serviço aponta para outro caminho: $($svc.PathName)" }
+              & sc.exe delete $ServiceName | Out-Null
+              $deadline = (Get-Date).AddSeconds(20)
+              while ((Get-CimInstance Win32_Service -Filter "Name='$ServiceName'") -and (Get-Date) -lt $deadline) {
+                  Start-Sleep -Seconds 1
+              }
+          }
+
+          $log = @()
+          $log += (& sc.exe create $ServiceName binPath= "`"$BinaryPath`"" start= auto obj= 'NT AUTHORITY\LocalService' DisplayName= 'Carmel Monitor Agent') -join ' '
+          $log += (& sc.exe description $ServiceName 'Coleta métricas do equipamento para o Monitoramento Carmel.') -join ' '
+          $log += (& sc.exe failure $ServiceName reset= 86400 actions= restart/5000/restart/15000/restart/60000) -join ' '
+          $log += (& sc.exe start $ServiceName) -join ' '
+          Start-Sleep -Seconds 3
+          $state = (Get-CimInstance Win32_Service -Filter "Name='$ServiceName'").State
+
+          $Ansible.Changed = $true
+          $Ansible.Result = @{ state = $state; log = $log }
+      register: monitor_agent_recreate
+
+    - name: Mostrar resultado da recriação
+      ansible.builtin.debug:
+        var: monitor_agent_recreate.result
+
     - name: Coletar diagnóstico do Service Control Manager
+      when: monitor_agent_recreate.result.state | default('') != 'Running'
       ansible.windows.win_powershell:
         error_action: stop
         parameters:
@@ -238,6 +278,7 @@
       register: monitor_agent_start_diagnostics
 
     - name: Informar causa da falha do serviço
+      when: monitor_agent_recreate.result.state | default('') != 'Running'
       ansible.builtin.fail:
         msg: '{{ monitor_agent_start_diagnostics.result | to_nice_json }}'
 
