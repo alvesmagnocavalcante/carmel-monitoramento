@@ -1,16 +1,42 @@
 ---
-- name: Validar parâmetros obrigatórios
+- name: Validar repositório do agente
   ansible.builtin.assert:
     that:
       - monitor_agent_github_repository is match('^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$')
-      - monitor_agent_release_tag is match('^agent-v[0-9]+\.[0-9]+\.[0-9]+$')
-      - monitor_agent_token | length >= 16
-      - monitor_agent_group | trim | length > 0
-      - monitor_agent_interval_seconds | int >= 10
     fail_msg: >-
-      Informe repositório GitHub, tag agent-vX.Y.Z, token (mínimo 16 caracteres),
-      grupo e intervalo (mínimo 10 segundos) no Semaphore.
-  no_log: true
+      monitor_agent_github_repository deve estar no formato proprietario/repositorio.
+    quiet: true
+
+- name: Validar versão do agente
+  ansible.builtin.assert:
+    that:
+      - monitor_agent_release_tag is match('^agent-v[0-9]+\.[0-9]+\.[0-9]+$')
+    fail_msg: >-
+      monitor_agent_release_tag não foi informado ou não segue agent-vX.Y.Z.
+    quiet: true
+
+- name: Validar token do agente
+  ansible.builtin.assert:
+    that:
+      - monitor_agent_token | trim | length > 0
+    fail_msg: >-
+      monitor_agent_token não foi informado no Variable Group do Semaphore.
+    quiet: true
+
+- name: Validar grupo do equipamento
+  ansible.builtin.assert:
+    that:
+      - monitor_agent_group | trim | length > 0
+    fail_msg: >-
+      monitor_agent_group não foi informado no inventário para este equipamento.
+    quiet: true
+
+- name: Validar intervalo de coleta
+  ansible.builtin.assert:
+    that:
+      - monitor_agent_interval_seconds | int >= 10
+    fail_msg: monitor_agent_interval_seconds deve ser igual ou superior a 10.
+    quiet: true
 
 - name: Calcular URLs e caminho da versão do agente
   ansible.builtin.set_fact:
