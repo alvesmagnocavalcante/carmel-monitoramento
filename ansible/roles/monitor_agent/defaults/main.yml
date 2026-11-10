@@ -1,0 +1,12 @@
+---
+monitor_agent_service_name: CarmelMonitorAgent
+monitor_agent_install_dir: 'C:\Program Files\Carmel Monitor'
+monitor_agent_config_path: '{{ monitor_agent_install_dir }}\config.json'
+monitor_agent_api_url: https://monitoramento-carmel.fastapicloud.dev
+monitor_agent_interval_seconds: 60
+
+# As releases são publicadas pelo workflow .github/workflows/release-agent.yml.
+monitor_agent_github_repository: alvesmagnocavalcante/carmel-monitoramento
+monitor_agent_release_tag: ''
+monitor_agent_token: ''
+monitor_agent_group: ''

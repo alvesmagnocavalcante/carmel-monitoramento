@@ -3,23 +3,26 @@ package main
 import (
 	"context"
 	"flag"
+	"fmt"
 	"log"
-	"os/signal"
-	"syscall"
 	"time"
 )
+
+const windowsServiceName = "CarmelMonitorAgent"
 
 func main() {
 	group := flag.String("group", "", "grupo deste computador")
 	flag.Parse()
-
-	config, err := loadConfig(*group)
-	if err != nil {
-		log.Fatalf("invalid configuration: %v", err)
+	if err := runAsServiceOrConsole(*group); err != nil {
+		log.Fatal(err)
 	}
+}
 
-	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	defer stop()
+func runAgent(ctx context.Context, group string) error {
+	config, err := loadConfig(group)
+	if err != nil {
+		return fmt.Errorf("invalid configuration: %w", err)
+	}
 
 	client := newAPIClient(config.APIURL, config.Token)
 	queue := newHeartbeatQueue(1000)
@@ -40,7 +43,7 @@ func main() {
 		case <-ctx.Done():
 			<-senderDone
 			log.Printf("agent %s stopped", config.AgentID)
-			return
+			return nil
 		case <-ticker.C:
 			collectAndQueue(config, queue)
 		}

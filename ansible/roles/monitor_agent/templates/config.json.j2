@@ -1,0 +1,6 @@
+{
+  "api_url": {{ monitor_agent_api_url | to_json }},
+  "group": {{ monitor_agent_group | to_json }},
+  "token": {{ monitor_agent_token | to_json }},
+  "interval_seconds": {{ monitor_agent_interval_seconds | int }}
+}

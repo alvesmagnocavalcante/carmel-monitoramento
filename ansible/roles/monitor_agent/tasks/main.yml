@@ -1,0 +1,114 @@
+---
+- name: Validar parâmetros obrigatórios
+  ansible.builtin.assert:
+    that:
+      - monitor_agent_github_repository is match('^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$')
+      - monitor_agent_release_tag is match('^agent-v[0-9]+\.[0-9]+\.[0-9]+$')
+      - monitor_agent_token | length >= 16
+      - monitor_agent_group | trim | length > 0
+      - monitor_agent_interval_seconds | int >= 10
+    fail_msg: >-
+      Informe repositório GitHub, tag agent-vX.Y.Z, token (mínimo 16 caracteres),
+      grupo e intervalo (mínimo 10 segundos) no Semaphore.
+  no_log: true
+
+- name: Calcular URLs e caminho da versão do agente
+  ansible.builtin.set_fact:
+    monitor_agent_binary_url: >-
+      https://github.com/{{ monitor_agent_github_repository }}/releases/download/{{
+      monitor_agent_release_tag }}/monitor-agent.exe
+    monitor_agent_checksum_url: >-
+      https://github.com/{{ monitor_agent_github_repository }}/releases/download/{{
+      monitor_agent_release_tag }}/monitor-agent.exe.sha256
+    monitor_agent_binary_path: >-
+      {{ monitor_agent_install_dir }}\monitor-agent-{{ monitor_agent_release_tag }}.exe
+
+- name: Criar diretório do agente
+  ansible.windows.win_file:
+    path: '{{ monitor_agent_install_dir }}'
+    state: directory
+
+- name: Baixar binário validando integridade
+  ansible.windows.win_get_url:
+    url: '{{ monitor_agent_binary_url }}'
+    dest: '{{ monitor_agent_binary_path }}'
+    checksum_url: '{{ monitor_agent_checksum_url }}'
+    checksum_algorithm: sha256
+    force: false
+  notify: restart carmel agent
+
+- name: Gravar configuração do agente
+  ansible.windows.win_template:
+    src: config.json.j2
+    dest: '{{ monitor_agent_config_path }}'
+  no_log: true
+  notify: restart carmel agent
+
+- name: Autorizar leitura da configuração ao serviço
+  ansible.windows.win_acl:
+    path: '{{ monitor_agent_config_path }}'
+    user: '{{ item.user }}'
+    rights: '{{ item.rights }}'
+    type: allow
+    state: present
+  loop:
+    - user: SYSTEM
+      rights: FullControl
+    - user: BUILTIN\Administrators
+      rights: FullControl
+    - user: NT AUTHORITY\LOCAL SERVICE
+      rights: Read
+
+- name: Remover permissões herdadas da configuração
+  ansible.windows.win_acl_inheritance:
+    path: '{{ monitor_agent_config_path }}'
+    state: absent
+    reorganize: false
+
+- name: Registrar e iniciar o serviço
+  ansible.windows.win_service:
+    name: '{{ monitor_agent_service_name }}'
+    display_name: Carmel Monitor Agent
+    description: Coleta métricas do equipamento para o Monitoramento Carmel.
+    path: '"{{ monitor_agent_binary_path }}"'
+    username: NT AUTHORITY\LocalService
+    start_mode: delayed
+    state: started
+    failure_actions:
+      - type: restart
+        delay_ms: 5000
+      - type: restart
+        delay_ms: 15000
+      - type: restart
+        delay_ms: 60000
+    failure_reset_period_sec: 86400
+  notify: restart carmel agent
+
+- name: Aplicar reinício antes da limpeza
+  ansible.builtin.meta: flush_handlers
+
+- name: Localizar versões antigas
+  ansible.windows.win_find:
+    paths: '{{ monitor_agent_install_dir }}'
+    patterns: monitor-agent-*.exe
+    file_type: file
+  register: monitor_agent_versions
+
+- name: Remover versões antigas
+  ansible.windows.win_file:
+    path: '{{ item.path }}'
+    state: absent
+  loop: '{{ monitor_agent_versions.files }}'
+  when: item.path | lower != monitor_agent_binary_path | lower
+
+- name: Consultar estado final do serviço
+  ansible.windows.win_service_info:
+    name: '{{ monitor_agent_service_name }}'
+  register: monitor_agent_service
+
+- name: Confirmar que o agente está ativo
+  ansible.builtin.assert:
+    that:
+      - monitor_agent_service.exists
+      - monitor_agent_service.services[0].state == 'started'
+    fail_msg: O serviço Carmel Monitor Agent não iniciou corretamente.

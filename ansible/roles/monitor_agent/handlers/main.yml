@@ -1,0 +1,6 @@
+---
+- name: Reiniciar agente Carmel
+  ansible.windows.win_service:
+    name: '{{ monitor_agent_service_name }}'
+    state: restarted
+  listen: restart carmel agent

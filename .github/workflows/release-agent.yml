@@ -1,0 +1,50 @@
+name: Publicar agente Windows
+
+on:
+  push:
+    tags:
+      - agent-v*.*.*
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: monitor/agent
+    steps:
+      - name: Baixar código
+        uses: actions/checkout@v4
+
+      - name: Configurar Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: monitor/agent/go.mod
+          cache-dependency-path: monitor/agent/go.sum
+
+      - name: Executar testes
+        run: go test ./...
+
+      - name: Compilar agente Windows
+        env:
+          GOOS: windows
+          GOARCH: amd64
+          CGO_ENABLED: '0'
+        run: go build -trimpath -ldflags='-s -w' -o dist/monitor-agent.exe .
+
+      - name: Gerar checksum SHA-256
+        working-directory: monitor/agent/dist
+        run: sha256sum monitor-agent.exe > monitor-agent.exe.sha256
+
+      - name: Criar GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          gh release create "${GITHUB_REF_NAME}"
+          dist/monitor-agent.exe
+          dist/monitor-agent.exe.sha256
+          --verify-tag
+          --title "Carmel Monitor Agent ${GITHUB_REF_NAME#agent-v}"
+          --generate-notes

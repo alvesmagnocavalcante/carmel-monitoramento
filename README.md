@@ -37,6 +37,75 @@ Campos: `api_url`, `group`, `token`, `interval_seconds`. As variáveis `API_URL`
 
 Se a API estiver fora do ar, os heartbeats ficam numa fila em memória (1000 itens) e são reenviados com backoff.
 
+### Compilar o agente para Windows
+
+```powershell
+cd monitor/agent
+$env:GOOS = 'windows'
+$env:GOARCH = 'amd64'
+go build -trimpath -ldflags '-s -w' -o dist/monitor-agent.exe .
+Get-FileHash -Algorithm SHA256 dist/monitor-agent.exe
+```
+
+Para publicar no GitHub Releases, crie e envie uma tag semântica. O workflow testa,
+compila e publica o executável e seu SHA-256 automaticamente:
+
+```bash
+git tag agent-v1.0.0
+git push origin agent-v1.0.0
+```
+
+O repositório ou, no mínimo, os assets da release precisam estar acessíveis pelos
+computadores. O playbook baixa o `.exe` diretamente do GitHub e valida o SHA-256
+antes da instalação.
+
+## Instalação remota com Ansible e Semaphore
+
+O agente funciona como serviço nativo `CarmelMonitorAgent`, inicia automaticamente
+com atraso e não abre janela na sessão do usuário. O serviço usa a conta restrita
+`LocalService`; o token fica em `C:\Program Files\Carmel Monitor\config.json`, com
+ACL limitada ao serviço, `SYSTEM` e administradores.
+
+### Pré-requisitos
+
+1. Garanta que o ambiente executor do Semaphore tenha `pywinrm>=0.5` e a collection
+   `ansible.windows` versão 3.9.2 ou superior.
+2. Habilite WinRM HTTPS (porta 5986) nos computadores por GPO ou ferramenta de RMM,
+   usando certificado emitido por uma CA confiável pelo servidor Semaphore.
+3. Crie uma conta administrativa dedicada ao Ansible. Não salve sua senha no Git.
+4. Garanta conectividade do servidor Semaphore até a porta 5986 dos computadores e
+   dos computadores até a URL da API e a URL HTTPS do binário.
+
+### Configurar o projeto no Semaphore
+
+1. Cadastre este repositório em **Repositories**.
+2. Crie o inventário no Semaphore, definindo `monitor_agent_group` nas variáveis
+   de cada grupo de computadores.
+3. Associe ao inventário uma credencial **Login with password** com a conta WinRM.
+4. Crie um **Variable Group/Environment** com estas variáveis YAML:
+
+   ```yaml
+   monitor_agent_release_tag: agent-v1.0.0
+   monitor_agent_token: TOKEN_DA_API
+   ```
+
+   Marque o ambiente como secreto. `monitor_agent_group` é definido por grupo no
+   inventário e pode ser sobrescrito por host.
+5. Crie um template apontando para `ansible/playbooks/install_agent.yml` e selecione
+   o inventário, o repositório e o ambiente cadastrados.
+6. Execute primeiro limitando a um PDV piloto. Depois remova o limite; o rollout é
+   feito em lotes de 20% e interrompe no primeiro lote com falha.
+
+Para validar a conectividade antes da instalação:
+
+```bash
+ansible windows -m ansible.windows.win_ping
+```
+
+O role é idempotente: baixa a versão indicada da release, valida seu hash, reinicia
+somente quando binário ou configuração mudam, mantém reinício automático após
+falha e remove a versão anterior somente depois que o serviço novo estiver ativo.
+
 ## Consumo do Turso
 
 Cada heartbeat grava 1 linha. Com 50 PCs a 60 s são ~2,2M escritas/mês, mais a limpeza de retenção (limite do plano: 10M).
