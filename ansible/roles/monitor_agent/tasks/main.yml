@@ -117,8 +117,6 @@
     path: '"{{ monitor_agent_binary_path }}"'
     username: NT AUTHORITY\LocalService
     start_mode: delayed
-    dependencies: []
-    dependency_action: set
     failure_actions:
       - type: restart
         delay_ms: 5000
@@ -128,6 +126,12 @@
         delay_ms: 60000
     failure_reset_period_sec: 86400
   notify: restart carmel agent
+
+- name: Remover dependências do serviço (erro 1068 se alguma estiver quebrada)
+  ansible.windows.win_command: >-
+    sc.exe config {{ monitor_agent_service_name }} depend= /
+  register: monitor_agent_clear_depend
+  changed_when: false
 
 - name: Iniciar o serviço
   block:
@@ -158,7 +162,12 @@
               $_.Message -like '*Carmel Monitor Agent*'
           } | Select-Object -First 5
 
+          $dependsOn = @(Get-Service -Name $ServiceName -ErrorAction SilentlyContinue |
+              ForEach-Object { $_.ServicesDependedOn } |
+              ForEach-Object { "$($_.Name)=$($_.Status)" })
+
           $Ansible.Result = @{
+              depends_on = $dependsOn
               state = $service.State
               start_name = $service.StartName
               path = $service.PathName
