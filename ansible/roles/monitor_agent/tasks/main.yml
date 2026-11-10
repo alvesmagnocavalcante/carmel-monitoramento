@@ -140,6 +140,8 @@
         sc.exe start {{ monitor_agent_service_name }}
         "exit=$LASTEXITCODE"
         sc.exe queryex {{ monitor_agent_service_name }}
+        "--- registro (somente leitura) ---"
+        reg.exe query "HKLM\SYSTEM\CurrentControlSet\Services\{{ monitor_agent_service_name }}" /s
       register: monitor_agent_sc_start
       changed_when: false
       failed_when: false
