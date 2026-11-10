@@ -2,6 +2,8 @@ const PAGE_SIZE = 25;
 const AGENTS_REFRESH_MS = 30_000;
 const METRICS_REFRESH_MS = 180_000;
 const HIGH_USAGE_PERCENT = 85;
+const FULL_DISK_PERCENT = 90;
+const BYTES_PER_GB = 1024 ** 3;
 
 const state = {
   agents: [],
@@ -31,6 +33,9 @@ const elements = {
   total: document.querySelector("#total-agents"),
   online: document.querySelector("#online-agents"),
   onlineShare: document.querySelector("#online-share"),
+  hostFacts: document.querySelector("#host-facts"),
+  hostVolumes: document.querySelector("#host-volumes"),
+  hostHint: document.querySelector("#host-hint"),
   offline: document.querySelector("#offline-agents"),
   group: document.querySelector("#group-select"),
   statusChips: document.querySelectorAll("#status-chips .chip"),
@@ -52,8 +57,12 @@ const elements = {
 
 /* ---------- Formatação ---------- */
 
+function formatDecimal(value) {
+  return value.toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+}
+
 function formatPercent(value) {
-  return Number.isFinite(value) ? `${value.toFixed(1)}%` : "—";
+  return Number.isFinite(value) ? `${formatDecimal(value)}%` : "—";
 }
 
 function relativeTime(value) {
@@ -71,7 +80,35 @@ function relativeTime(value) {
 function formatRate(mbps) {
   if (!Number.isFinite(mbps)) return "—";
   const kbps = Math.round(mbps * 1000);
-  return kbps >= 1000 ? `${mbps.toFixed(1)} Mbps` : `${kbps} kbps`;
+  return kbps >= 1000 ? `${formatDecimal(mbps)} Mbps` : `${kbps} kbps`;
+}
+
+function formatNumber(value) {
+  return value.toLocaleString("pt-BR", { maximumFractionDigits: value >= 100 ? 0 : 1 });
+}
+
+function formatGb(bytes) {
+  const gb = bytes / BYTES_PER_GB;
+  return gb >= 1024 ? `${formatNumber(gb / 1024)} TB` : `${formatNumber(gb)} GB`;
+}
+
+// "9,4 / 15,7 GB": a unidade aparece uma vez só, a do total.
+function formatUsage(usedBytes, totalBytes) {
+  const unit = totalBytes >= 1024 * BYTES_PER_GB ? 1024 * BYTES_PER_GB : BYTES_PER_GB;
+  return `${formatNumber(usedBytes / unit)} / ${formatNumber(totalBytes / unit)} ${unit === BYTES_PER_GB ? "GB" : "TB"}`;
+}
+
+function formatDuration(seconds) {
+  const days = Math.floor(seconds / 86400);
+  const hours = Math.floor((seconds % 86400) / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  if (days) return `${days} d ${hours} h`;
+  if (hours) return `${hours} h ${minutes} min`;
+  return `${minutes} min`;
+}
+
+function formatDateTime(date) {
+  return new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short" }).format(date);
 }
 
 function formatTime(value) {
@@ -140,7 +177,7 @@ function createCell(label, content, className) {
   return cell;
 }
 
-function metricCell(label, value, className) {
+function metricCell(label, value, className, detail) {
   const wrapper = document.createElement("div");
   wrapper.className = "metric";
   const text = document.createElement("span");
@@ -152,6 +189,12 @@ function metricCell(label, value, className) {
   fill.style.width = `${Number.isFinite(value) ? Math.min(100, Math.max(0, value)) : 0}%`;
   meter.append(fill);
   wrapper.append(text, meter);
+  if (detail) {
+    const extra = document.createElement("span");
+    extra.className = "metric-detail";
+    extra.textContent = detail;
+    wrapper.append(extra);
+  }
   return createCell(label, wrapper, className);
 }
 
@@ -168,6 +211,37 @@ function networkCell(agent) {
     wrapper.append(line);
   });
   return createCell("Rede", wrapper, "c-net");
+}
+
+// Discos fixos com uso acima de FULL_DISK_PERCENT (ou o disco do sistema, para agentes antigos).
+function fullVolumes(agent) {
+  if (!agent.volumes?.length) {
+    const percent = agent.latest_metric?.disk_percent;
+    return percent >= FULL_DISK_PERCENT ? [{ mount: "Disco", percent }] : [];
+  }
+  return agent.volumes
+    .filter((volume) => volume.total_bytes > 0)
+    .map((volume) => ({ mount: volume.mount, percent: (volume.used_bytes / volume.total_bytes) * 100 }))
+    .filter((volume) => volume.percent >= FULL_DISK_PERCENT);
+}
+
+function statusCell(agent) {
+  const stack = document.createElement("div");
+  stack.className = "status-stack";
+  const badge = document.createElement("span");
+  badge.className = `badge ${agent.status}`;
+  badge.textContent = agent.status;
+  stack.append(badge);
+
+  const full = fullVolumes(agent);
+  if (full.length) {
+    const warning = document.createElement("span");
+    warning.className = "badge warn";
+    warning.textContent = "Disco cheio";
+    warning.title = full.map((volume) => `${volume.mount} ${Math.round(volume.percent)}%`).join(" · ");
+    stack.append(warning);
+  }
+  return createCell("Status", stack, "c-status");
 }
 
 function actionButton(label, className, onClick) {
@@ -193,10 +267,6 @@ function hostRow(agent) {
   hostButton.append(hostName, hostMeta);
   hostButton.addEventListener("click", () => selectAgent(agent.id));
 
-  const badge = document.createElement("span");
-  badge.className = `badge ${agent.status}`;
-  badge.textContent = agent.status;
-
   const actions = document.createElement("div");
   actions.className = "row-actions";
   actions.append(
@@ -205,12 +275,18 @@ function hostRow(agent) {
   );
 
   const metric = agent.latest_metric;
+  const memoryTotal = agent.system?.memory_total_bytes;
+  const memoryDetail = memoryTotal && metric
+    ? formatUsage((memoryTotal * metric.memory_percent) / 100, memoryTotal)
+    : "";
+  const systemVolume = agent.volumes?.[0];
+  const diskDetail = systemVolume ? formatUsage(systemVolume.used_bytes, systemVolume.total_bytes) : "";
   row.append(
     createCell("Host", hostButton, "c-host"),
-    createCell("Status", badge, "c-status"),
+    statusCell(agent),
     metricCell("CPU", metric?.cpu_percent, "c-cpu"),
-    metricCell("Memória", metric?.memory_percent, "c-mem"),
-    metricCell("Disco", metric?.disk_percent, "c-disk"),
+    metricCell("Memória", metric?.memory_percent, "c-mem", memoryDetail),
+    metricCell("Disco", metric?.disk_percent, "c-disk", diskDetail),
     networkCell(agent),
     createCell("Último contato", relativeTime(agent.last_seen), "c-last last-contact"),
     createCell("Ações", actions, "c-act"),
@@ -250,8 +326,77 @@ function renderSummary() {
     : "";
 }
 
+function addFact(list, label, value) {
+  if (!value) return;
+  const term = document.createElement("dt");
+  term.textContent = label;
+  const description = document.createElement("dd");
+  description.textContent = value;
+  list.append(term, description);
+}
+
+function volumeRow(volume) {
+  const percent = volume.total_bytes > 0 ? (volume.used_bytes / volume.total_bytes) * 100 : 0;
+  const row = document.createElement("div");
+  row.className = "volume-row";
+  const head = document.createElement("div");
+  head.className = "volume-head";
+  const name = document.createElement("span");
+  name.textContent = `${volume.mount} · ${formatUsage(volume.used_bytes, volume.total_bytes)}`;
+  const share = document.createElement("span");
+  share.textContent = formatPercent(percent);
+  head.append(name, share);
+  const meter = document.createElement("div");
+  meter.className = `meter${percent >= FULL_DISK_PERCENT ? " high" : ""}`;
+  const fill = document.createElement("span");
+  fill.style.width = `${Math.min(100, percent)}%`;
+  meter.append(fill);
+  row.append(head, meter);
+  return row;
+}
+
+function renderHostInfo() {
+  const agent = state.agents.find((item) => item.id === state.selectedAgentId);
+  if (!agent) return;
+  const { system, latest_metric: metric } = agent;
+  elements.hostFacts.replaceChildren();
+  elements.hostVolumes.replaceChildren();
+  elements.hostHint.hidden = Boolean(system);
+
+  if (system) {
+    addFact(elements.hostFacts, "Sistema", [
+      system.platform, system.platform_version, system.build ? `(build ${system.build})` : "",
+    ].filter(Boolean).join(" "));
+    addFact(elements.hostFacts, "CPU", [
+      system.cpu_model,
+      system.cpu_cores ? `${system.cpu_cores} núcleos / ${system.cpu_threads} threads` : "",
+    ].filter(Boolean).join(" · "));
+    if (system.memory_total_bytes) {
+      addFact(elements.hostFacts, "Memória", metric
+        ? `${formatUsage((system.memory_total_bytes * metric.memory_percent) / 100, system.memory_total_bytes)} (${formatPercent(metric.memory_percent)})`
+        : formatGb(system.memory_total_bytes));
+    }
+  }
+  if (metric) {
+    // Uptime e boot são os do último contato do agente.
+    addFact(elements.hostFacts, "Uptime", formatDuration(metric.uptime_s));
+    addFact(elements.hostFacts, "Último boot", formatDateTime(new Date(new Date(metric.received_at) - metric.uptime_s * 1000)));
+  }
+  if (system) {
+    addFact(elements.hostFacts, "IPs", system.ips?.join(", "));
+    addFact(elements.hostFacts, "Agente", system.agent_version ? `v${system.agent_version}` : "");
+  }
+  if (agent.volumes?.length) {
+    const title = document.createElement("p");
+    title.className = "facts-title";
+    title.textContent = "Discos";
+    elements.hostVolumes.append(title, ...agent.volumes.map(volumeRow));
+  }
+}
+
 function renderHosts() {
   renderSummary();
+  renderHostInfo();
 
   const agents = filteredAgents();
   const pages = Math.max(1, Math.ceil(agents.length / PAGE_SIZE));

@@ -180,7 +180,7 @@ h2 { font-size: 19px; letter-spacing: 3px; line-height: 1.2; }
 }
 .host-table td { padding: 14px; text-align: left; border-bottom: 1px solid var(--line); vertical-align: middle; }
 .host-table .col-host { width: 24%; }
-.host-table .col-status { width: 124px; }
+.host-table .col-status { width: 136px; }
 .host-table .col-net { width: 118px; }
 .host-table .col-actions { width: 168px; }
 .host-table tbody tr { cursor: pointer; transition: background 120ms ease; }
@@ -200,7 +200,8 @@ h2 { font-size: 19px; letter-spacing: 3px; line-height: 1.2; }
 .host-name-button strong { display: block; font-size: 14px; font-weight: 600; overflow-wrap: anywhere; }
 .host-name-button span { display: block; margin-top: 2px; color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
 
-.metric { display: grid; gap: 6px; max-width: 120px; }
+.metric { display: grid; gap: 5px; max-width: 120px; }
+.metric-detail { color: var(--muted); font-size: 11px; white-space: nowrap; }
 .metric-value { color: var(--ink); font-family: var(--serif); font-size: 22px; font-weight: 600; line-height: 1; font-variant-numeric: lining-nums tabular-nums; }
 .meter { height: 4px; overflow: hidden; border-radius: 999px; background: var(--line); }
 .meter span { display: block; height: 100%; border-radius: inherit; background: var(--ink-soft); }
@@ -211,15 +212,17 @@ h2 { font-size: 19px; letter-spacing: 3px; line-height: 1.2; }
 .net-in { color: var(--chart-net-in); }
 .net-out { color: var(--chart-net-out); }
 :root[data-theme="dark"] .net-out { color: var(--chart-disk); }
+.status-stack { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; }
 .last-contact { color: var(--muted); white-space: nowrap; }
 .row-actions { display: flex; gap: 8px; }
 .icon-button { padding: 6px 12px; color: var(--ink-soft); font-size: 12px; font-weight: 600; border: 1px solid var(--line); border-radius: 999px; background: transparent; cursor: pointer; }
 .icon-button:hover { color: var(--ink); border-color: var(--control-line); }
 .icon-button.danger:hover { color: var(--offline); border-color: var(--offline); }
 
-.badge { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; font-size: 11px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase; border-radius: 999px; }
+.badge { white-space: nowrap; display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; font-size: 11px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase; border-radius: 999px; }
 .badge::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
 .badge.online { color: var(--online); background: color-mix(in srgb, var(--online) 14%, transparent); }
+.badge.warn { padding: 3px 9px; color: var(--accent-text); border: 1px solid currentColor; font-size: 10px; letter-spacing: 1px; }
 .badge.offline { color: var(--offline); background: color-mix(in srgb, var(--offline) 14%, transparent); }
 
 .sort-button { position: relative; padding: 0 14px 0 0; color: inherit; font: inherit; letter-spacing: inherit; text-transform: inherit; border: 0; background: transparent; cursor: pointer; }
@@ -235,7 +238,7 @@ h2 { font-size: 19px; letter-spacing: 3px; line-height: 1.2; }
   .layout.has-details .host-table td.c-last { width: 0; padding: 0; overflow: hidden; font-size: 0; }
   .layout.has-details .host-table .col-last button { display: none; }
   .layout.has-details .host-table .col-actions { width: 150px; }
-  .layout.has-details .host-table .col-status { width: 112px; }
+  .layout.has-details .host-table .col-status { width: 132px; }
   .layout.has-details .host-table .col-net { width: 106px; }
   .layout.has-details .host-table th { padding-inline: 8px; letter-spacing: 1px; }
   .layout.has-details .host-table td { padding-inline: 8px; }
@@ -271,6 +274,16 @@ h2 { font-size: 19px; letter-spacing: 3px; line-height: 1.2; }
 .field-label { display: block; margin-bottom: 6px; color: var(--muted); font-size: 11px; font-weight: 600; letter-spacing: 2px; text-transform: uppercase; }
 .period-field select { width: 100%; }
 
+.host-card { margin-bottom: 16px; padding: 16px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--field); }
+.host-facts { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 8px 16px; margin: 12px 0 0; font-size: 13px; }
+.host-facts dt { padding-top: 2px; color: var(--muted); font-size: 11px; font-weight: 600; letter-spacing: 2px; text-transform: uppercase; }
+.host-facts dd { margin: 0; color: var(--ink); overflow-wrap: anywhere; }
+.volumes { display: grid; gap: 12px; margin-top: 16px; }
+.facts-title { color: var(--muted); font-size: 11px; font-weight: 600; letter-spacing: 2px; text-transform: uppercase; }
+.volume-row { display: grid; gap: 6px; }
+.volume-head { display: flex; justify-content: space-between; gap: 12px; color: var(--ink); font-size: 13px; }
+.volume-head span:last-child { color: var(--muted); font-variant-numeric: tabular-nums; }
+.hint { margin-top: 12px; color: var(--muted); font-size: 12px; }
 .chart-stack { display: grid; gap: 12px; }
 .chart-card { min-width: 0; padding: 14px 16px 10px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--field); }
 .chart-title { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; color: var(--ink); font-size: 11px; font-weight: 600; letter-spacing: 2px; text-transform: uppercase; }
@@ -356,6 +369,7 @@ h2 { font-size: 19px; letter-spacing: 3px; line-height: 1.2; }
   .host-table td { display: block; min-width: 0; padding: 0; border: 0; }
   .host-table td.c-host { grid-area: host; }
   .host-table td.c-status { grid-area: status; justify-self: end; }
+  .status-stack { align-items: flex-end; }
   .host-table td.c-cpu { grid-area: cpu; }
   .host-table td.c-mem { grid-area: mem; }
   .host-table td.c-disk { grid-area: disk; }

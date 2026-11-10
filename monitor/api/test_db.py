@@ -1,4 +1,5 @@
 import os
+import sqlite3
 import tempfile
 import unittest
 from datetime import datetime, timedelta, timezone
@@ -60,11 +61,11 @@ class DatabaseContractTests(unittest.TestCase):
         self.assertIsNone(database.get_metrics("agt_test", 60))
 
     def test_sqlite_backend(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as directory:
             self.exercise_database(Database(Path(directory) / "monitor.db"))
 
     def test_libsql_compatible_backend(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as directory:
             path = str(Path(directory) / "libsql.db")
             database = Database(
                 "unused.db",
@@ -75,7 +76,7 @@ class DatabaseContractTests(unittest.TestCase):
             self.exercise_database(database)
 
     def test_purge_removes_only_old_metrics(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as directory:
             database = Database(Path(directory) / "monitor.db")
             database.initialize()
             database.record_heartbeat(PAYLOAD)
@@ -90,7 +91,7 @@ class DatabaseContractTests(unittest.TestCase):
             self.assertEqual(database.list_agents()[0]["status"], "online")
 
     def test_initialize_drops_legacy_token_hash_column(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as directory:
             database = Database(Path(directory) / "monitor.db")
             database.initialize()
             with database.connect() as connection:
@@ -101,7 +102,7 @@ class DatabaseContractTests(unittest.TestCase):
             self.assertNotIn("token_hash", columns)
 
     def test_network_rate_uses_last_two_metrics(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as directory:
             database = Database(Path(directory) / "monitor.db")
             database.initialize()
             now = datetime.now(timezone.utc)
@@ -125,6 +126,56 @@ class DatabaseContractTests(unittest.TestCase):
                     "UPDATE metrics SET net_bytes_recv = 99999999 WHERE received_at = ?", (before,)
                 )
             self.assertIsNone(database.list_agents()[0]["net_recv_mbps"])
+
+    def test_system_info_and_volumes(self) -> None:
+        system = {"platform": "Microsoft Windows 11 Pro", "build": "26300.9711", "ips": ["10.0.0.5"]}
+        volumes = [{"mount": "C:", "total_bytes": 250, "used_bytes": 200}]
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as directory:
+            database = Database(Path(directory) / "monitor.db")
+            database.initialize()
+            database.record_heartbeat(dict(PAYLOAD, system=system, volumes=volumes))
+            agent = database.list_agents()[0]
+            self.assertEqual(agent["system"], system)
+            self.assertEqual(agent["volumes"], volumes)
+
+            # agente antigo (sem os campos novos) não apaga o que já foi guardado
+            database.record_heartbeat(
+                dict(PAYLOAD, timestamp=datetime.now(timezone.utc) + timedelta(seconds=1))
+            )
+            self.assertEqual(database.list_agents()[0]["system"], system)
+
+            changed = dict(system, build="26300.9999")
+            database.record_heartbeat(
+                dict(PAYLOAD, timestamp=datetime.now(timezone.utc) + timedelta(seconds=2), system=changed)
+            )
+            self.assertEqual(database.list_agents()[0]["system"], changed)
+
+    def test_initialize_migrates_database_without_host_columns(self) -> None:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as directory:
+            path = Path(directory) / "legacy.db"
+            connection = sqlite3.connect(path)
+            connection.executescript(
+                """
+                CREATE TABLE agents (id TEXT PRIMARY KEY, group_name TEXT NOT NULL DEFAULT 'Sem grupo',
+                    name TEXT NOT NULL, created_at TEXT NOT NULL, last_seen TEXT, hostname TEXT, os TEXT,
+                    expected_interval_s INTEGER NOT NULL DEFAULT 30);
+                CREATE TABLE metrics (id INTEGER PRIMARY KEY AUTOINCREMENT, agent_id TEXT NOT NULL,
+                    received_at TEXT NOT NULL, agent_timestamp TEXT, cpu_percent REAL NOT NULL,
+                    memory_percent REAL NOT NULL, disk_percent REAL NOT NULL, temp_c REAL,
+                    net_bytes_sent INTEGER NOT NULL, net_bytes_recv INTEGER NOT NULL, uptime_s INTEGER NOT NULL);
+                INSERT INTO agents (id, name, created_at, last_seen, hostname, os, expected_interval_s)
+                    VALUES ('old', 'PDV-ANTIGO', '2026-01-01T00:00:00+00:00', '2026-01-01T00:00:00+00:00', 'h', 'windows', 60);
+                """
+            )
+            connection.commit()
+            connection.close()
+
+            database = Database(path)
+            database.initialize()
+            agent = database.list_agents()[0]
+            self.assertEqual(agent["name"], "PDV-ANTIGO")
+            self.assertIsNone(agent["system"])
+            self.assertIsNone(agent["volumes"])
 
     def test_turso_environment_requires_url_and_token(self) -> None:
         environment = {

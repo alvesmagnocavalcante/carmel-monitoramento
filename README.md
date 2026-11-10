@@ -32,6 +32,8 @@ cd monitor/agent
 go build -ldflags "-X main.defaultAgentToken=<AGENT_TOKEN>" -o dist/monitor-agent.exe .
 ```
 
+O agente também envia informações do computador (Windows, CPU, memória, discos fixos, IPs, uptime e versão do agente, definida em `agentVersion`; para mudar no build: `-X main.agentVersion=1.2.0`). Ao publicar uma versão nova, faça o deploy da API **antes** de atualizar os agentes.
+
 Na primeira execução o agente pergunta o grupo (ou use `--group "Nome"`) e grava `config.json` ao lado do exe.
 Campos: `api_url`, `group`, `token`, `interval_seconds`. As variáveis `API_URL`, `AGENT_GROUP`, `AGENT_TOKEN`, `INTERVAL_SECONDS` e `CONFIG_PATH` têm precedência sobre o arquivo.
 

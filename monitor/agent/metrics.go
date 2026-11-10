@@ -16,19 +16,21 @@ import (
 )
 
 type Heartbeat struct {
-	AgentID       string   `json:"agent_id"`
-	Group         string   `json:"group"`
-	Timestamp     string   `json:"timestamp"`
-	CPUPercent    float64  `json:"cpu_percent"`
-	MemoryPercent float64  `json:"memory_percent"`
-	DiskPercent   float64  `json:"disk_percent"`
-	TempC         *float64 `json:"temp_c"`
-	NetBytesSent  uint64   `json:"net_bytes_sent"`
-	NetBytesRecv  uint64   `json:"net_bytes_recv"`
-	UptimeS       uint64   `json:"uptime_s"`
-	Hostname      string   `json:"hostname"`
-	OS            string   `json:"os"`
-	IntervalS     int      `json:"interval_seconds"`
+	AgentID       string      `json:"agent_id"`
+	Group         string      `json:"group"`
+	Timestamp     string      `json:"timestamp"`
+	CPUPercent    float64     `json:"cpu_percent"`
+	MemoryPercent float64     `json:"memory_percent"`
+	DiskPercent   float64     `json:"disk_percent"`
+	TempC         *float64    `json:"temp_c"`
+	NetBytesSent  uint64      `json:"net_bytes_sent"`
+	NetBytesRecv  uint64      `json:"net_bytes_recv"`
+	UptimeS       uint64      `json:"uptime_s"`
+	Hostname      string      `json:"hostname"`
+	OS            string      `json:"os"`
+	IntervalS     int         `json:"interval_seconds"`
+	System        *SystemInfo `json:"system,omitempty"`
+	Volumes       []Volume    `json:"volumes,omitempty"`
 }
 
 func collectMetrics(agentID, group string, intervalSeconds int) (Heartbeat, error) {
@@ -68,7 +70,10 @@ func collectMetrics(agentID, group string, intervalSeconds int) (Heartbeat, erro
 		return Heartbeat{}, fmt.Errorf("collect hostname: %w", err)
 	}
 
+	system := currentSystemInfo(memory.Total)
 	return Heartbeat{
+		System:        &system,
+		Volumes:       collectVolumes(),
 		AgentID:       agentID,
 		Group:         group,
 		Timestamp:     time.Now().UTC().Format(time.RFC3339Nano),

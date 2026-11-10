@@ -19,9 +19,9 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300..700&family=Cormorant:wght@400..700&display=swap">
-  <link rel="stylesheet" href="/static/styles.css?v=20261110-7">
+  <link rel="stylesheet" href="/static/styles.css?v=20261110-10">
   <script src="/static/chart.umd.min.js" defer></script>
-  <script src="/static/app.js?v=20261110-4" defer></script>
+  <script src="/static/app.js?v=20261110-7" defer></script>
 </head>
 <body>
   <div class="app">
@@ -137,6 +137,13 @@
             <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg>
           </button>
         </div>
+
+        <section class="host-card" aria-label="Informações do host">
+          <p class="eyebrow">Informações do host</p>
+          <dl class="host-facts" id="host-facts"></dl>
+          <div class="volumes" id="host-volumes"></div>
+          <p class="hint" id="host-hint" hidden>Atualize o agente deste computador para ver sistema, CPU, memória e discos.</p>
+        </section>
 
         <label class="select-field period-field">
           <span class="field-label">Período</span>

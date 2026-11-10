@@ -1,3 +1,4 @@
+import json
 import os
 import sqlite3
 from collections.abc import Callable, Iterator
@@ -22,7 +23,8 @@ CREATE TABLE IF NOT EXISTS agents (
     last_seen TEXT,
     hostname TEXT,
     os TEXT,
-    expected_interval_s INTEGER NOT NULL DEFAULT 30 CHECK (expected_interval_s > 0)
+    expected_interval_s INTEGER NOT NULL DEFAULT 30 CHECK (expected_interval_s > 0),
+    system_info TEXT
 );
 
 CREATE TABLE IF NOT EXISTS metrics (
@@ -37,6 +39,7 @@ CREATE TABLE IF NOT EXISTS metrics (
     net_bytes_sent INTEGER NOT NULL,
     net_bytes_recv INTEGER NOT NULL,
     uptime_s INTEGER NOT NULL,
+    volumes TEXT,
     FOREIGN KEY (agent_id) REFERENCES agents(id) ON DELETE CASCADE
 );
 
@@ -142,11 +145,17 @@ class Database:
                 connection.execute("PRAGMA journal_mode=WAL")
                 connection.execute("PRAGMA synchronous=NORMAL")
             connection.executescript(SCHEMA)
-            columns = {
-                row[1] for row in connection.execute("PRAGMA table_info(agents)").fetchall()
-            }
-            if "token_hash" in columns:  # coluna legada, nunca usada
+            agent_columns = self._columns(connection, "agents")
+            if "token_hash" in agent_columns:  # coluna legada, nunca usada
                 connection.execute("ALTER TABLE agents DROP COLUMN token_hash")
+            if "system_info" not in agent_columns:
+                connection.execute("ALTER TABLE agents ADD COLUMN system_info TEXT")
+            if "volumes" not in self._columns(connection, "metrics"):
+                connection.execute("ALTER TABLE metrics ADD COLUMN volumes TEXT")
+
+    @staticmethod
+    def _columns(connection: Any, table: str) -> set[str]:
+        return {row[1] for row in connection.execute(f"PRAGMA table_info({table})").fetchall()}
 
     def record_heartbeat(self, payload: dict[str, Any]) -> datetime:
         received_at = utc_now()
@@ -154,13 +163,18 @@ class Database:
         agent_timestamp_db = (
             to_db_timestamp(agent_timestamp) if agent_timestamp else None
         )
+        # Informação fixa do host (SO, CPU, RAM...): gravada só quando muda.
+        system = payload.get("system")
+        system_json = json.dumps(system, sort_keys=True) if system else None
+        volumes = payload.get("volumes")
+        volumes_json = json.dumps(volumes) if volumes else None
         with self.connect() as connection:
             # Leitura barata em vez de upsert a cada heartbeat: escrita só quando
             # o agente é novo ou mudou hostname/os/intervalo. O last_seen vem da
             # última métrica (ver list_agents).
             known = row_as_dict(
                 connection.execute(
-                    "SELECT hostname, os, expected_interval_s FROM agents WHERE id = ?",
+                    "SELECT hostname, os, expected_interval_s, system_info FROM agents WHERE id = ?",
                     (payload["agent_id"],),
                 )
             )
@@ -169,8 +183,8 @@ class Database:
                     """
                     INSERT INTO agents (
                         id, group_name, name, created_at, last_seen,
-                        hostname, os, expected_interval_s
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                        hostname, os, expected_interval_s, system_info
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         payload["agent_id"],
@@ -181,23 +195,26 @@ class Database:
                         payload["hostname"],
                         payload["os"],
                         payload["interval_seconds"],
+                        system_json,
                     ),
                 )
             elif (
                 known["hostname"] != payload["hostname"]
                 or known["os"] != payload["os"]
                 or known["expected_interval_s"] != payload["interval_seconds"]
+                or (system_json is not None and known["system_info"] != system_json)
             ):
                 connection.execute(
                     """
                     UPDATE agents SET hostname = ?, os = ?, expected_interval_s = ?,
-                        last_seen = ?
+                        system_info = COALESCE(?, system_info), last_seen = ?
                     WHERE id = ?
                     """,
                     (
                         payload["hostname"],
                         payload["os"],
                         payload["interval_seconds"],
+                        system_json,
                         to_db_timestamp(received_at),
                         payload["agent_id"],
                     ),
@@ -207,8 +224,8 @@ class Database:
                 INSERT INTO metrics (
                     agent_id, received_at, agent_timestamp, cpu_percent,
                     memory_percent, disk_percent, temp_c, net_bytes_sent,
-                    net_bytes_recv, uptime_s
-                ) SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+                    net_bytes_recv, uptime_s, volumes
+                ) SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
                 WHERE NOT EXISTS (
                     SELECT 1 FROM metrics
                     WHERE agent_id = ? AND received_at >= ? AND agent_timestamp IS ?
@@ -225,6 +242,7 @@ class Database:
                     payload["net_bytes_sent"],
                     payload["net_bytes_recv"],
                     payload["uptime_s"],
+                    volumes_json,
                     payload["agent_id"],
                     to_db_timestamp(received_at - DEDUP_WINDOW),
                     agent_timestamp_db,
@@ -260,7 +278,7 @@ class Database:
                     f"""
                     SELECT a.id, a.group_name, a.name,
                            COALESCE(m.received_at, a.last_seen) AS last_seen, a.hostname, a.os,
-                           a.expected_interval_s,
+                           a.expected_interval_s, a.system_info, m.volumes,
                            m.received_at, m.agent_timestamp, m.cpu_percent,
                            m.memory_percent, m.disk_percent, m.temp_c,
                            m.net_bytes_sent, m.net_bytes_recv, m.uptime_s,
@@ -308,6 +326,8 @@ class Database:
                     "os": row["os"],
                     "expected_interval_s": row["expected_interval_s"],
                     "latest_metric": latest_metric,
+                    "system": json.loads(row["system_info"]) if row["system_info"] else None,
+                    "volumes": json.loads(row["volumes"]) if row["volumes"] else None,
                     **self._network_rates(row),
                 }
             )
