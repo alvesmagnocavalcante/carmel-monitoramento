@@ -200,8 +200,7 @@ h2 { font-size: 19px; letter-spacing: 3px; line-height: 1.2; }
 .host-name-button strong { display: block; font-size: 14px; font-weight: 600; overflow-wrap: anywhere; }
 .host-name-button span { display: block; margin-top: 2px; color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
 
-.metric { display: grid; gap: 5px; max-width: 120px; }
-.metric-detail { color: var(--muted); font-size: 11px; white-space: nowrap; }
+.metric { display: grid; gap: 6px; max-width: 120px; }
 .metric-value { color: var(--ink); font-family: var(--serif); font-size: 22px; font-weight: 600; line-height: 1; font-variant-numeric: lining-nums tabular-nums; }
 .meter { height: 4px; overflow: hidden; border-radius: 999px; background: var(--line); }
 .meter span { display: block; height: 100%; border-radius: inherit; background: var(--ink-soft); }
@@ -274,12 +273,15 @@ h2 { font-size: 19px; letter-spacing: 3px; line-height: 1.2; }
 .field-label { display: block; margin-bottom: 6px; color: var(--muted); font-size: 11px; font-weight: 600; letter-spacing: 2px; text-transform: uppercase; }
 .period-field select { width: 100%; }
 
-.host-card { margin-bottom: 16px; padding: 16px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--field); }
-.host-facts { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 8px 16px; margin: 12px 0 0; font-size: 13px; }
-.host-facts dt { padding-top: 2px; color: var(--muted); font-size: 11px; font-weight: 600; letter-spacing: 2px; text-transform: uppercase; }
-.host-facts dd { margin: 0; color: var(--ink); overflow-wrap: anywhere; }
-.volumes { display: grid; gap: 12px; margin-top: 16px; }
-.facts-title { color: var(--muted); font-size: 11px; font-weight: 600; letter-spacing: 2px; text-transform: uppercase; }
+.host-card { margin-bottom: 16px; }
+.fact-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 12px; }
+.fact { display: grid; align-content: start; gap: 4px; min-width: 0; padding: 12px 14px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--field); }
+.fact.wide { grid-column: 1 / -1; }
+.fact-label { color: var(--muted); font-size: 10px; font-weight: 600; letter-spacing: 2px; text-transform: uppercase; }
+.fact-value { color: var(--ink); font-size: 14px; font-weight: 600; line-height: 1.3; overflow-wrap: anywhere; }
+.fact-sub { color: var(--muted); font-size: 12px; }
+.fact .meter { margin-top: 4px; }
+.volume-list { display: grid; gap: 12px; margin-top: 6px; }
 .volume-row { display: grid; gap: 6px; }
 .volume-head { display: flex; justify-content: space-between; gap: 12px; color: var(--ink); font-size: 13px; }
 .volume-head span:last-child { color: var(--muted); font-variant-numeric: tabular-nums; }
