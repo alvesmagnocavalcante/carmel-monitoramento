@@ -127,12 +127,6 @@
     failure_reset_period_sec: 86400
   notify: restart carmel agent
 
-- name: Remover dependências do serviço (erro 1068 se alguma estiver quebrada)
-  ansible.windows.win_command: >-
-    sc.exe config {{ monitor_agent_service_name }} depend= /
-  register: monitor_agent_clear_depend
-  changed_when: false
-
 - name: Iniciar o serviço
   block:
     - name: Iniciar Carmel Monitor Agent
@@ -166,7 +160,23 @@
               ForEach-Object { $_.ServicesDependedOn } |
               ForEach-Object { "$($_.Name)=$($_.Status)" })
 
+          # Somente leitura: nada aqui altera serviços ou o sistema.
+          $scmEvents = Get-WinEvent -FilterHashtable @{
+              LogName = 'System'
+              ProviderName = 'Service Control Manager'
+              StartTime = (Get-Date).AddMinutes(-15)
+          } -MaxEvents 8 -ErrorAction SilentlyContinue
+          $exePath = ($service.PathName -replace '^"([^"]+)".*$', '$1')
+          $exe = Get-Item -LiteralPath $exePath -ErrorAction SilentlyContinue
+          $qc = (& sc.exe qc $ServiceName) -join ' | '
+
           $Ansible.Result = @{
+              sc_qc = $qc
+              exe_exists = [bool] $exe
+              exe_size = if ($exe) { $exe.Length } else { $null }
+              scm_events = @($scmEvents | ForEach-Object {
+                  "$($_.TimeCreated.ToString('s')) id=$($_.Id) $($_.Message)"
+              })
               depends_on = $dependsOn
               state = $service.State
               start_name = $service.StartName
