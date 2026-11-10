@@ -263,11 +263,20 @@ class Database:
                            a.expected_interval_s,
                            m.received_at, m.agent_timestamp, m.cpu_percent,
                            m.memory_percent, m.disk_percent, m.temp_c,
-                           m.net_bytes_sent, m.net_bytes_recv, m.uptime_s
+                           m.net_bytes_sent, m.net_bytes_recv, m.uptime_s,
+                           p.received_at AS prev_received_at,
+                           p.net_bytes_sent AS prev_net_sent,
+                           p.net_bytes_recv AS prev_net_recv
                     FROM agents a
                     LEFT JOIN metrics m ON m.id = (
                         SELECT id FROM metrics
                         WHERE agent_id = a.id
+                        ORDER BY received_at DESC, id DESC
+                        LIMIT 1
+                    )
+                    LEFT JOIN metrics p ON p.id = (
+                        SELECT id FROM metrics
+                        WHERE agent_id = a.id AND received_at < m.received_at
                         ORDER BY received_at DESC, id DESC
                         LIMIT 1
                     )
@@ -299,6 +308,7 @@ class Database:
                     "os": row["os"],
                     "expected_interval_s": row["expected_interval_s"],
                     "latest_metric": latest_metric,
+                    **self._network_rates(row),
                 }
             )
         return agents
@@ -372,6 +382,29 @@ class Database:
                 )
             )
         return [self._metric_from_row(row) for row in rows]
+
+    @staticmethod
+    def _network_rates(row: dict[str, Any]) -> dict[str, float | None]:
+        """Velocidade de rede (Mbps) entre as duas últimas medições do agente.
+
+        Os contadores de bytes são acumulados; se diminuíram (reinício do
+        computador) ou não há medição anterior, a velocidade fica indefinida.
+        """
+        rates: dict[str, float | None] = {"net_recv_mbps": None, "net_sent_mbps": None}
+        if not row["received_at"] or not row["prev_received_at"]:
+            return rates
+        elapsed = (
+            from_db_timestamp(row["received_at"]) - from_db_timestamp(row["prev_received_at"])
+        ).total_seconds()
+        if elapsed <= 0:
+            return rates
+        for key, now_bytes, before_bytes in (
+            ("net_recv_mbps", row["net_bytes_recv"], row["prev_net_recv"]),
+            ("net_sent_mbps", row["net_bytes_sent"], row["prev_net_sent"]),
+        ):
+            if now_bytes >= before_bytes:
+                rates[key] = (now_bytes - before_bytes) * 8 / elapsed / 1_000_000
+        return rates
 
     @staticmethod
     def _metric_from_row(row: dict[str, Any]) -> dict[str, Any]:

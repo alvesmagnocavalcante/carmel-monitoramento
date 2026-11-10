@@ -179,8 +179,9 @@ h2 { font-size: 19px; letter-spacing: 3px; line-height: 1.2; }
   border-bottom: 1px solid var(--line);
 }
 .host-table td { padding: 14px; text-align: left; border-bottom: 1px solid var(--line); vertical-align: middle; }
-.host-table .col-host { width: 26%; }
+.host-table .col-host { width: 24%; }
 .host-table .col-status { width: 124px; }
+.host-table .col-net { width: 118px; }
 .host-table .col-actions { width: 168px; }
 .host-table tbody tr { cursor: pointer; transition: background 120ms ease; }
 .host-table tbody tr:hover { background: var(--hover); }
@@ -205,6 +206,11 @@ h2 { font-size: 19px; letter-spacing: 3px; line-height: 1.2; }
 .meter span { display: block; height: 100%; border-radius: inherit; background: var(--ink-soft); }
 .meter.high span { background: var(--offline); }
 
+.net { display: grid; gap: 3px; color: var(--ink); font-size: 13px; font-weight: 500; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.net-line b { display: inline-block; width: 14px; font-weight: 700; }
+.net-in { color: var(--chart-net-in); }
+.net-out { color: var(--chart-net-out); }
+:root[data-theme="dark"] .net-out { color: var(--chart-disk); }
 .last-contact { color: var(--muted); white-space: nowrap; }
 .row-actions { display: flex; gap: 8px; }
 .icon-button { padding: 6px 12px; color: var(--ink-soft); font-size: 12px; font-weight: 600; border: 1px solid var(--line); border-radius: 999px; background: transparent; cursor: pointer; }
@@ -229,6 +235,10 @@ h2 { font-size: 19px; letter-spacing: 3px; line-height: 1.2; }
   .layout.has-details .host-table td.c-last { width: 0; padding: 0; overflow: hidden; font-size: 0; }
   .layout.has-details .host-table .col-last button { display: none; }
   .layout.has-details .host-table .col-actions { width: 150px; }
+  .layout.has-details .host-table .col-status { width: 112px; }
+  .layout.has-details .host-table .col-net { width: 106px; }
+  .layout.has-details .host-table th { padding-inline: 8px; letter-spacing: 1px; }
+  .layout.has-details .host-table td { padding-inline: 8px; }
 }
 
 .pagination { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-top: 16px; color: var(--muted); font-size: 12px; }
@@ -333,6 +343,7 @@ h2 { font-size: 19px; letter-spacing: 3px; line-height: 1.2; }
     grid-template-areas:
       "host host status"
       "cpu mem disk"
+      "net net net"
       "last last act";
     gap: 14px 12px;
     align-items: center;
@@ -348,9 +359,10 @@ h2 { font-size: 19px; letter-spacing: 3px; line-height: 1.2; }
   .host-table td.c-cpu { grid-area: cpu; }
   .host-table td.c-mem { grid-area: mem; }
   .host-table td.c-disk { grid-area: disk; }
+  .host-table td.c-net { grid-area: net; }
   .host-table td.c-last { grid-area: last; }
   .host-table td.c-act { grid-area: act; }
-  .host-table td.c-cpu::before, .host-table td.c-mem::before, .host-table td.c-disk::before {
+  .host-table td.c-cpu::before, .host-table td.c-mem::before, .host-table td.c-disk::before, .host-table td.c-net::before {
     content: attr(data-label);
     display: block;
     margin-bottom: 6px;
@@ -362,6 +374,7 @@ h2 { font-size: 19px; letter-spacing: 3px; line-height: 1.2; }
     text-transform: uppercase;
   }
   .metric { max-width: none; }
+  .net { display: flex; gap: 24px; font-size: 14px; }
   .last-contact { font-size: 12px; }
   .row-actions { justify-content: flex-end; }
 

@@ -68,6 +68,12 @@ function relativeTime(value) {
   return `Há ${Math.floor(hours / 24)}d`;
 }
 
+function formatRate(mbps) {
+  if (!Number.isFinite(mbps)) return "—";
+  const kbps = Math.round(mbps * 1000);
+  return kbps >= 1000 ? `${mbps.toFixed(1)} Mbps` : `${kbps} kbps`;
+}
+
 function formatTime(value) {
   return new Intl.DateTimeFormat("pt-BR", { hour: "2-digit", minute: "2-digit" }).format(new Date(value));
 }
@@ -90,6 +96,7 @@ function metricForSort(agent, key) {
   if (key === "name") return agent.name.toLocaleLowerCase("pt-BR");
   if (key === "status") return agent.status;
   if (key === "last_seen") return agent.last_seen ? new Date(agent.last_seen).getTime() : 0;
+  if (key === "net") return (agent.net_recv_mbps ?? -1) + (agent.net_sent_mbps ?? 0);
   const fields = { cpu: "cpu_percent", memory: "memory_percent", disk: "disk_percent" };
   return agent.latest_metric?.[fields[key]] ?? -1;
 }
@@ -148,6 +155,21 @@ function metricCell(label, value, className) {
   return createCell(label, wrapper, className);
 }
 
+function networkCell(agent) {
+  const wrapper = document.createElement("div");
+  wrapper.className = "net";
+  [["↓", "in", agent.net_recv_mbps], ["↑", "out", agent.net_sent_mbps]].forEach(([arrow, direction, value]) => {
+    const line = document.createElement("span");
+    line.className = "net-line";
+    const icon = document.createElement("b");
+    icon.className = `net-${direction}`;
+    icon.textContent = arrow;
+    line.append(icon, formatRate(value));
+    wrapper.append(line);
+  });
+  return createCell("Rede", wrapper, "c-net");
+}
+
 function actionButton(label, className, onClick) {
   const button = document.createElement("button");
   button.type = "button";
@@ -189,6 +211,7 @@ function hostRow(agent) {
     metricCell("CPU", metric?.cpu_percent, "c-cpu"),
     metricCell("Memória", metric?.memory_percent, "c-mem"),
     metricCell("Disco", metric?.disk_percent, "c-disk"),
+    networkCell(agent),
     createCell("Último contato", relativeTime(agent.last_seen), "c-last last-contact"),
     createCell("Ações", actions, "c-act"),
   );
@@ -202,7 +225,7 @@ function groupHeader(group, count) {
   const row = document.createElement("tr");
   row.className = "group-header";
   const cell = document.createElement("td");
-  cell.colSpan = 7;
+  cell.colSpan = 8;
 
   const content = document.createElement("div");
   content.className = "group-header-content";

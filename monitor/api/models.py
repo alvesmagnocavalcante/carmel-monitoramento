@@ -43,6 +43,8 @@ class AgentOut(BaseModel):
     os: str | None
     expected_interval_s: int
     latest_metric: MetricOut | None
+    net_recv_mbps: float | None = None
+    net_sent_mbps: float | None = None
 
 
 class AgentUpdate(BaseModel):

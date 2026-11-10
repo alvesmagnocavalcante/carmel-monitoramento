@@ -100,6 +100,32 @@ class DatabaseContractTests(unittest.TestCase):
                 columns = [r[1] for r in connection.execute("PRAGMA table_info(agents)").fetchall()]
             self.assertNotIn("token_hash", columns)
 
+    def test_network_rate_uses_last_two_metrics(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            database = Database(Path(directory) / "monitor.db")
+            database.initialize()
+            now = datetime.now(timezone.utc)
+            database.record_heartbeat(
+                dict(PAYLOAD, timestamp=now - timedelta(seconds=60), net_bytes_recv=0, net_bytes_sent=0)
+            )
+            self.assertIsNone(database.list_agents()[0]["net_recv_mbps"], "sem medição anterior")
+            before = (now - timedelta(seconds=60)).isoformat()
+            with database.connect() as connection:
+                connection.execute("UPDATE metrics SET received_at = ?", (before,))
+            database.record_heartbeat(
+                dict(PAYLOAD, timestamp=now, net_bytes_recv=7_500_000, net_bytes_sent=750_000)
+            )
+            agent = database.list_agents()[0]
+            self.assertAlmostEqual(agent["net_recv_mbps"], 1.0, delta=0.05)
+            self.assertAlmostEqual(agent["net_sent_mbps"], 0.1, delta=0.01)
+
+            # contador menor que o anterior (computador reiniciou): sem velocidade
+            with database.connect() as connection:
+                connection.execute(
+                    "UPDATE metrics SET net_bytes_recv = 99999999 WHERE received_at = ?", (before,)
+                )
+            self.assertIsNone(database.list_agents()[0]["net_recv_mbps"])
+
     def test_turso_environment_requires_url_and_token(self) -> None:
         environment = {
             "TURSO_DATABASE_URL": "libsql://test.invalid",
