@@ -109,7 +109,7 @@
     state: absent
     reorganize: false
 
-- name: Registrar e iniciar o serviço
+- name: Registrar o serviço
   ansible.windows.win_service:
     name: '{{ monitor_agent_service_name }}'
     display_name: Carmel Monitor Agent
@@ -117,7 +117,6 @@
     path: '"{{ monitor_agent_binary_path }}"'
     username: NT AUTHORITY\LocalService
     start_mode: delayed
-    state: started
     failure_actions:
       - type: restart
         delay_ms: 5000
@@ -127,6 +126,55 @@
         delay_ms: 60000
     failure_reset_period_sec: 86400
   notify: restart carmel agent
+
+- name: Iniciar o serviço
+  block:
+    - name: Iniciar Carmel Monitor Agent
+      ansible.windows.win_service:
+        name: '{{ monitor_agent_service_name }}'
+        state: started
+
+  rescue:
+    - name: Coletar diagnóstico do Service Control Manager
+      ansible.windows.win_powershell:
+        error_action: stop
+        parameters:
+          ServiceName: '{{ monitor_agent_service_name }}'
+        script: |
+          param([string] $ServiceName)
+
+          $Ansible.Changed = $false
+          $service = Get-CimInstance -ClassName Win32_Service -Filter "Name='$ServiceName'"
+          $startTime = (Get-Date).AddMinutes(-10)
+          $eventIds = 7000, 7001, 7009, 7011, 7023, 7024, 7031, 7034
+          $events = Get-WinEvent -FilterHashtable @{
+              LogName = 'System'
+              Id = $eventIds
+              StartTime = $startTime
+          } -ErrorAction SilentlyContinue | Where-Object {
+              $_.Message -like "*$ServiceName*" -or
+              $_.Message -like '*Carmel Monitor Agent*'
+          } | Select-Object -First 5
+
+          $Ansible.Result = @{
+              state = $service.State
+              start_name = $service.StartName
+              path = $service.PathName
+              win32_exit_code = $service.ExitCode
+              service_exit_code = $service.ServiceSpecificExitCode
+              events = @($events | ForEach-Object {
+                  @{
+                      time = $_.TimeCreated.ToString('s')
+                      id = $_.Id
+                      message = $_.Message
+                  }
+              })
+          }
+      register: monitor_agent_start_diagnostics
+
+    - name: Informar causa da falha do serviço
+      ansible.builtin.fail:
+        msg: '{{ monitor_agent_start_diagnostics.result | to_nice_json }}'
 
 - name: Aplicar reinício antes da limpeza
   ansible.builtin.meta: flush_handlers
