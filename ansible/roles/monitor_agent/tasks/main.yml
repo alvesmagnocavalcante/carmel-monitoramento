@@ -170,7 +170,36 @@
           $exe = Get-Item -LiteralPath $exePath -ErrorAction SilentlyContinue
           $qc = (& sc.exe qc $ServiceName) -join ' | '
 
+          $icaclsExe = (& icacls.exe $exePath) -join ' | '
+          $icaclsDir = (& icacls.exe (Split-Path $exePath)) -join ' | '
+          $qsid = (& sc.exe qsidtype $ServiceName) -join ' | '
+          $qpriv = (& sc.exe qprivs $ServiceName) -join ' | '
+          $blockEvents = @()
+          foreach ($log in 'Microsoft-Windows-CodeIntegrity/Operational',
+                           'Microsoft-Windows-AppLocker/EXE and DLL',
+                           'Microsoft-Windows-Windows Defender/Operational') {
+              $blockEvents += Get-WinEvent -FilterHashtable @{
+                  LogName = $log
+                  StartTime = (Get-Date).AddMinutes(-15)
+              } -MaxEvents 5 -ErrorAction SilentlyContinue | ForEach-Object {
+                  "$log id=$($_.Id) $($_.Message)"
+              }
+          }
+          $appEvents = Get-WinEvent -FilterHashtable @{
+              LogName = 'Application'
+              Level = 1, 2
+              StartTime = (Get-Date).AddMinutes(-15)
+          } -MaxEvents 5 -ErrorAction SilentlyContinue | ForEach-Object {
+              "id=$($_.Id) $($_.ProviderName) $($_.Message)"
+          }
+
           $Ansible.Result = @{
+              icacls_exe = $icaclsExe
+              icacls_dir = $icaclsDir
+              sc_qsidtype = $qsid
+              sc_qprivs = $qpriv
+              block_events = @($blockEvents)
+              app_errors = @($appEvents)
               sc_qc = $qc
               exe_exists = [bool] $exe
               exe_size = if ($exe) { $exe.Length } else { $null }
