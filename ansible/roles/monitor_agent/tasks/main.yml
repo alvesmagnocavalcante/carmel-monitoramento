@@ -109,22 +109,36 @@
     state: absent
     reorganize: false
 
-- name: Registrar o serviço
-  ansible.windows.win_service:
-    name: '{{ monitor_agent_service_name }}'
-    display_name: Carmel Monitor Agent
-    description: Coleta métricas do equipamento para o Monitoramento Carmel.
-    path: '"{{ monitor_agent_binary_path }}"'
-    username: NT AUTHORITY\LocalService
-    start_mode: delayed
-    failure_actions:
-      - type: restart
-        delay_ms: 5000
-      - type: restart
-        delay_ms: 15000
-      - type: restart
-        delay_ms: 60000
-    failure_reset_period_sec: 86400
+# O módulo win_service deixou o serviço em um estado que o SCM recusa iniciar
+# (erro 1068 sem dependências). Por isso o registro usa sc.exe diretamente,
+# e somente sobre o serviço CarmelMonitorAgent.
+- name: Registrar ou atualizar o serviço (sc.exe)
+  ansible.windows.win_powershell:
+    error_action: stop
+    parameters:
+      ServiceName: '{{ monitor_agent_service_name }}'
+      BinaryPath: '{{ monitor_agent_binary_path }}'
+    script: |
+      param([string] $ServiceName, [string] $BinaryPath)
+
+      if ($ServiceName -ne 'CarmelMonitorAgent') { throw "Serviço inesperado: $ServiceName" }
+      $Ansible.Changed = $false
+      $expected = "`"$BinaryPath`""
+      $svc = Get-CimInstance Win32_Service -Filter "Name='$ServiceName'"
+
+      if (-not $svc) {
+          & sc.exe create $ServiceName binPath= $expected start= auto obj= 'NT AUTHORITY\LocalService' DisplayName= 'Carmel Monitor Agent' | Out-Null
+          if ($LASTEXITCODE -ne 0) { throw "sc create falhou: $LASTEXITCODE" }
+          & sc.exe description $ServiceName 'Coleta métricas do equipamento para o Monitoramento Carmel.' | Out-Null
+          & sc.exe failure $ServiceName reset= 86400 actions= restart/5000/restart/15000/restart/60000 | Out-Null
+          $Ansible.Changed = $true
+      }
+      elseif ($svc.PathName -ne $expected) {
+          # Nova versão do agente: só troca o caminho; o handler reinicia o serviço.
+          & sc.exe config $ServiceName binPath= $expected | Out-Null
+          if ($LASTEXITCODE -ne 0) { throw "sc config falhou: $LASTEXITCODE" }
+          $Ansible.Changed = $true
+      }
   notify: restart carmel agent
 
 - name: Iniciar o serviço
