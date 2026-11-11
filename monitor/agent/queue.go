@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"log"
 	"sync"
 	"time"
@@ -103,6 +104,11 @@ func runSender(ctx context.Context, client *APIClient, queue *HeartbeatQueue) {
 		}
 
 		if err := client.send(ctx, heartbeat); err != nil {
+			if errors.Is(err, errRejected) {
+				// Sem isto, um envio recusado ficaria na frente da fila e bloquearia os seguintes.
+				log.Printf("heartbeat discarded: %v", err)
+				continue
+			}
 			queue.PushFront(heartbeat)
 			log.Printf(
 				"heartbeat failed: %v; retry in %s; queued=%d",

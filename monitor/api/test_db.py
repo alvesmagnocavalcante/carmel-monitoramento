@@ -9,6 +9,7 @@ from unittest.mock import patch
 import libsql
 
 from db import Database
+from models import HeartbeatIn
 
 
 PAYLOAD = {
@@ -185,6 +186,23 @@ class DatabaseContractTests(unittest.TestCase):
         with patch.dict(os.environ, environment, clear=True):
             with self.assertRaises(RuntimeError):
                 Database.from_environment("monitor.db")
+
+    def test_heartbeat_tolerates_rounding_and_long_descriptions(self) -> None:
+        """Um 422 por dado descritivo travava a fila do agente: apara em vez de recusar."""
+        payload = {
+            **PAYLOAD,
+            "cpu_percent": 100.4,
+            "memory_percent": -0.0,
+            "hostname": "h" * 300,
+            "system": {"cpu_model": "x" * 300, "ips": ["10.0.0.1"] * 12},
+            "volumes": [{"mount": "C" * 40, "total_bytes": 1, "used_bytes": 1}],
+        }
+        heartbeat = HeartbeatIn(**payload)
+        self.assertEqual(heartbeat.cpu_percent, 100)
+        self.assertEqual(len(heartbeat.hostname), 255)
+        self.assertEqual(len(heartbeat.system.cpu_model), 128)
+        self.assertEqual(len(heartbeat.system.ips), 8)
+        self.assertEqual(len(heartbeat.volumes[0].mount), 16)
 
 
 if __name__ == "__main__":

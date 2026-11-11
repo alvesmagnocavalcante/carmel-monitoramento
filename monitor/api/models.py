@@ -1,6 +1,11 @@
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
+
+def _fit_text(value, limit):
+    """Informação descritiva nunca deve fazer o heartbeat ser recusado: apara o excesso."""
+    return value[:limit] if isinstance(value, str) else value
 
 
 class SystemInfo(BaseModel):
@@ -19,11 +24,26 @@ class SystemInfo(BaseModel):
     memory_total_bytes: int | None = Field(default=None, ge=0)
     ips: list[str] = Field(default_factory=list, max_length=8)
 
+    @field_validator("agent_version", "platform", "platform_version", "build", "arch", "cpu_model", mode="before")
+    @classmethod
+    def _trim_text(cls, value, info):
+        return _fit_text(value, cls.model_fields[info.field_name].metadata[0].max_length)
+
+    @field_validator("ips", mode="before")
+    @classmethod
+    def _limit_ips(cls, value):
+        return value[:8] if isinstance(value, list) else value
+
 
 class Volume(BaseModel):
     mount: str = Field(min_length=1, max_length=16)
     total_bytes: int = Field(ge=0)
     used_bytes: int = Field(ge=0)
+
+    @field_validator("mount", mode="before")
+    @classmethod
+    def _trim_mount(cls, value):
+        return _fit_text(value, 16)
 
 
 class HeartbeatIn(BaseModel):
@@ -44,6 +64,22 @@ class HeartbeatIn(BaseModel):
     interval_seconds: int = Field(default=60, ge=1, le=86_400)
     system: SystemInfo | None = None
     volumes: list[Volume] | None = Field(default=None, max_length=16)
+
+    @field_validator("cpu_percent", "memory_percent", "disk_percent", mode="before")
+    @classmethod
+    def _clamp_percent(cls, value):
+        # O Windows às vezes devolve 100,01 ou -0,0: é arredondamento, não erro.
+        return min(max(value, 0), 100) if isinstance(value, (int, float)) else value
+
+    @field_validator("hostname", "os", mode="before")
+    @classmethod
+    def _trim_names(cls, value, info):
+        return _fit_text(value, 255 if info.field_name == "hostname" else 128)
+
+    @field_validator("volumes", mode="before")
+    @classmethod
+    def _limit_volumes(cls, value):
+        return value[:16] if isinstance(value, list) else value
 
 
 class MetricOut(BaseModel):

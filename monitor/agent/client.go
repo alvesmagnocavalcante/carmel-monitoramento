@@ -4,11 +4,15 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"time"
 )
+
+// errRejected marca uma recusa definitiva da API (ex.: 422): repetir o mesmo envio nunca resolve.
+var errRejected = errors.New("heartbeat rejected")
 
 type APIClient struct {
 	url        string
@@ -47,7 +51,17 @@ func (client *APIClient) send(ctx context.Context, heartbeat Heartbeat) error {
 
 	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
 		message, _ := io.ReadAll(io.LimitReader(response.Body, 1024))
-		return fmt.Errorf("API returned %s: %s", response.Status, bytes.TrimSpace(message))
+		err := fmt.Errorf("API returned %s: %s", response.Status, bytes.TrimSpace(message))
+		if isPermanentRejection(response.StatusCode) {
+			return fmt.Errorf("%w: %w", errRejected, err)
+		}
+		return err
 	}
 	return nil
+}
+
+// Erros 4xx são do conteúdo ou da credencial; só 408 e 429 valem uma nova tentativa.
+func isPermanentRejection(status int) bool {
+	return status >= 400 && status < 500 &&
+		status != http.StatusRequestTimeout && status != http.StatusTooManyRequests
 }

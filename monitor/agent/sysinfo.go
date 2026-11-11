@@ -15,7 +15,7 @@ import (
 )
 
 // Definida no build com: -X main.agentVersion=1.2.0
-var agentVersion = "1.1.0"
+var agentVersion = "1.1.1"
 
 const (
 	systemInfoTTL = time.Hour

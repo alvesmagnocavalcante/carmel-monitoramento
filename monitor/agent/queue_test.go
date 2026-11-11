@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"sync/atomic"
@@ -72,4 +73,45 @@ func TestRunSenderRetriesFailedHeartbeat(t *testing.T) {
 	}
 	cancel()
 	<-done
+}
+
+func TestRunSenderDiscardsRejectedHeartbeatAndContinues(t *testing.T) {
+	var sent atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		sent.Add(1)
+		var heartbeat Heartbeat
+		_ = json.NewDecoder(request.Body).Decode(&heartbeat)
+		if heartbeat.AgentID == "bad" {
+			http.Error(response, "invalid", http.StatusUnprocessableEntity)
+			return
+		}
+		response.WriteHeader(http.StatusNoContent)
+	}))
+	defer server.Close()
+
+	queue := newHeartbeatQueue(10)
+	queue.Push(Heartbeat{AgentID: "bad"})
+	queue.Push(Heartbeat{AgentID: "good"})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		runSender(ctx, newAPIClient(server.URL, "test-token"), queue)
+		close(done)
+	}()
+
+	deadline := time.After(3 * time.Second)
+	for sent.Load() < 2 || queue.Len() != 0 {
+		select {
+		case <-deadline:
+			cancel()
+			t.Fatalf("queue stayed blocked: requests=%d queued=%d", sent.Load(), queue.Len())
+		case <-time.After(10 * time.Millisecond):
+		}
+	}
+	cancel()
+	<-done
+	if sent.Load() != 2 {
+		t.Fatalf("rejected heartbeat was retried: requests=%d", sent.Load())
+	}
 }
