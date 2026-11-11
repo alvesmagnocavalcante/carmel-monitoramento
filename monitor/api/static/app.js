@@ -17,6 +17,7 @@ const state = {
   charts: {},
   refreshing: false,
   metricsLoadedAt: 0,
+  tv: false,
 };
 
 const elements = {
@@ -34,6 +35,8 @@ const elements = {
   online: document.querySelector("#online-agents"),
   onlineShare: document.querySelector("#online-share"),
   hostFacts: document.querySelector("#host-facts"),
+  editHost: document.querySelector("#edit-host"),
+  deleteHost: document.querySelector("#delete-host"),
   hostHint: document.querySelector("#host-hint"),
   offline: document.querySelector("#offline-agents"),
   group: document.querySelector("#group-select"),
@@ -119,6 +122,7 @@ function setUpdated(ok) {
   elements.updatedAt.textContent = ok
     ? `Atualizado às ${new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}`
     : "Sem conexão com a API";
+  document.dispatchEvent(new Event("agents-updated"));
 }
 
 /* ---------- Filtros e ordenação ---------- */
@@ -241,15 +245,6 @@ function statusCell(agent) {
   return createCell("Status", stack, "c-status");
 }
 
-function actionButton(label, className, onClick) {
-  const button = document.createElement("button");
-  button.type = "button";
-  button.className = className;
-  button.textContent = label;
-  button.addEventListener("click", onClick);
-  return button;
-}
-
 function hostRow(agent) {
   const row = document.createElement("tr");
   if (agent.id === state.selectedAgentId) row.classList.add("selected");
@@ -264,13 +259,6 @@ function hostRow(agent) {
   hostButton.append(hostName, hostMeta);
   hostButton.addEventListener("click", () => selectAgent(agent.id));
 
-  const actions = document.createElement("div");
-  actions.className = "row-actions";
-  actions.append(
-    actionButton("Editar", "icon-button", () => openEditDialog(agent)),
-    actionButton("Excluir", "icon-button danger", () => deleteAgent(agent)),
-  );
-
   const metric = agent.latest_metric;
   row.append(
     createCell("Host", hostButton, "c-host"),
@@ -280,7 +268,6 @@ function hostRow(agent) {
     metricCell("Disco", metric?.disk_percent, "c-disk"),
     networkCell(agent),
     createCell("Último contato", relativeTime(agent.last_seen), "c-last last-contact"),
-    createCell("Ações", actions, "c-act"),
   );
   row.addEventListener("click", (event) => {
     if (!event.target.closest("button")) selectAgent(agent.id);
@@ -292,7 +279,7 @@ function groupHeader(group, count) {
   const row = document.createElement("tr");
   row.className = "group-header";
   const cell = document.createElement("td");
-  cell.colSpan = 8;
+  cell.colSpan = 7;
 
   const content = document.createElement("div");
   content.className = "group-header-content";
@@ -682,6 +669,15 @@ async function refresh() {
 
 elements.period.addEventListener("change", () => refreshMetrics().catch(() => setUpdated(false)));
 elements.closeDetails.addEventListener("click", closeDetails);
+// Editar e excluir ficam no cartão do host selecionado.
+elements.editHost.addEventListener("click", () => {
+  const agent = state.agents.find((item) => item.id === state.selectedAgentId);
+  if (agent) openEditDialog(agent);
+});
+elements.deleteHost.addEventListener("click", () => {
+  const agent = state.agents.find((item) => item.id === state.selectedAgentId);
+  if (agent) deleteAgent(agent);
+});
 document.addEventListener("keydown", (event) => {
   if (event.key === "Escape" && state.selectedAgentId && !elements.editDialog.open) closeDetails();
 });

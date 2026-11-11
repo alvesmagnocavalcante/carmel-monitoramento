@@ -19,9 +19,10 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300..700&family=Cormorant:wght@400..700&display=swap">
-  <link rel="stylesheet" href="/static/styles.css?v=20261110-13">
+  <link rel="stylesheet" href="/static/styles.css?v=20261111-2">
   <script src="/static/chart.umd.min.js" defer></script>
-  <script src="/static/app.js?v=20261110-9" defer></script>
+  <script src="/static/app.js?v=20261111-1" defer></script>
+  <script src="/static/tv.js?v=20261110-3" defer></script>
 </head>
 <body>
   <div class="app">
@@ -35,6 +36,11 @@
           <h1>Monitoramento</h1>
         </div>
       </div>
+      <div class="topbar-actions">
+        <button type="button" class="pill-button" id="tv-toggle" aria-label="Abrir o modo apresentação (tela cheia)">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/></svg>
+          <span>Apresentação</span>
+        </button>
       <button type="button" class="theme-toggle" id="theme-toggle" aria-label="Alternar entre tema claro e escuro">
         <svg class="icon-sun" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true">
           <circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>
@@ -43,6 +49,7 @@
           <path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/>
         </svg>
       </button>
+      </div>
     </header>
 
     <main class="layout" id="layout">
@@ -104,7 +111,6 @@
                   <th class="col-metric"><button class="sort-button" data-sort="disk">Disco</button></th>
                   <th class="col-net"><button class="sort-button" data-sort="net">Rede</button></th>
                   <th class="col-last"><button class="sort-button" data-sort="last_seen">Último contato</button></th>
-                  <th class="col-actions">Ações</th>
                 </tr>
               </thead>
               <tbody id="host-table-body"></tbody>
@@ -142,6 +148,10 @@
           <p class="eyebrow">Informações do host</p>
           <div class="fact-grid" id="host-facts"></div>
           <p class="hint" id="host-hint" hidden>Atualize o agente deste computador para ver sistema, CPU, memória e discos.</p>
+          <div class="host-actions">
+            <button type="button" class="icon-button" id="edit-host">Editar host</button>
+            <button type="button" class="icon-button danger" id="delete-host">Excluir host</button>
+          </div>
         </section>
 
         <label class="select-field period-field">
@@ -181,6 +191,39 @@
     </footer>
   </div>
 
+  <section class="tv" id="tv" aria-label="Modo apresentação" hidden>
+    <header class="tv-head" id="tv-head">
+      <div class="tv-brand">
+        <img class="logo logo-light" src="/static/img/carmel-hoteis.png" alt="Carmel Hotéis">
+        <img class="logo logo-dark" src="/static/img/carmel-hoteis-negativo.png" alt="" aria-hidden="true">
+        <span class="brand-divider" aria-hidden="true"></span>
+        <div class="brand-title">
+          <p class="eyebrow">TI · Infraestrutura</p>
+          <h1>Monitoramento</h1>
+        </div>
+      </div>
+      <div class="tv-kpis">
+        <div class="tv-kpi"><span>Máquinas</span><strong id="tv-total">0</strong></div>
+        <div class="tv-kpi tv-kpi-online"><span>Online</span><strong id="tv-online">0</strong></div>
+        <div class="tv-kpi tv-kpi-offline"><span>Offline</span><strong id="tv-offline">0</strong></div>
+        <div class="tv-kpi tv-kpi-warn"><span>Disco cheio</span><strong id="tv-disk-full">0</strong></div>
+      </div>
+      <div class="tv-meta">
+        <strong id="tv-clock">--:--</strong>
+        <span id="tv-date"></span>
+        <span class="updated-at" id="tv-updated"></span>
+      </div>
+      <div class="tv-actions">
+        <button type="button" class="theme-toggle" id="tv-theme" aria-label="Alternar entre tema claro e escuro">
+          <svg class="icon-sun" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+          <svg class="icon-moon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+        </button>
+        <button type="button" class="pill-button" id="tv-rotate" aria-pressed="false" title="Alterna entre os grupos, um por vez, com letras maiores">Rotacionar grupos</button>
+        <button type="button" class="pill-button" id="tv-exit">Sair</button>
+      </div>
+    </header>
+    <div class="tv-body" id="tv-body"></div>
+  </section>
   <dialog class="edit-dialog" id="edit-dialog">
     <form id="edit-agent-form">
       <div class="dialog-heading">
