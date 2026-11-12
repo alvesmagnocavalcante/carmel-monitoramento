@@ -129,6 +129,10 @@ function setUpdated(ok) {
 
 /* ---------- Filtros e ordenação ---------- */
 
+function selectedAgent() {
+  return state.agents.find((agent) => agent.id === state.selectedAgentId);
+}
+
 function groupAgents() {
   if (state.selectedGroup === "all") return state.agents;
   return state.agents.filter((agent) => agent.group === state.selectedGroup);
@@ -338,7 +342,8 @@ function factTile({ label, value, sub, percent, wide }) {
   const main = document.createElement("strong");
   main.className = "fact-value";
   main.textContent = value;
-  tile.append(title, main);
+  tile.append(title);
+  if (value) tile.append(main);
   if (sub) {
     const detail = document.createElement("span");
     detail.className = "fact-sub";
@@ -365,8 +370,7 @@ function volumeRow(volume) {
 }
 
 function disksTile(volumes) {
-  const tile = factTile({ label: "Discos", value: "", wide: true });
-  tile.querySelector(".fact-value").remove();
+  const tile = factTile({ label: "Discos", wide: true });
   const list = document.createElement("div");
   list.className = "volume-list";
   list.append(...volumes.map(volumeRow));
@@ -375,7 +379,7 @@ function disksTile(volumes) {
 }
 
 function renderHostInfo() {
-  const agent = state.agents.find((item) => item.id === state.selectedAgentId);
+  const agent = selectedAgent();
   if (!agent) return;
   const { system, latest_metric: metric } = agent;
   const tiles = [];
@@ -414,6 +418,9 @@ function renderHostInfo() {
     // Uptime e boot são os do último contato do agente.
     const boot = new Date(new Date(metric.received_at) - metric.uptime_s * 1000);
     tiles.push(factTile({ label: "Uptime", value: formatDuration(metric.uptime_s), sub: `Último boot: ${formatDateTime(boot)}` }));
+  }
+  if (Number.isFinite(metric?.temp_c)) {
+    tiles.push(factTile({ label: "Temperatura", value: `${formatDecimal(metric.temp_c)} °C` }));
   }
   if (system?.ips?.length) tiles.push(factTile({ label: "IPs", value: system.ips.join(" · ") }));
   if (system?.agent_version) tiles.push(factTile({ label: "Agente", value: `v${system.agent_version}` }));
@@ -691,11 +698,11 @@ elements.period.addEventListener("change", () => refreshMetrics().catch(() => se
 elements.closeDetails.addEventListener("click", closeDetails);
 // Editar e excluir ficam no cartão do host selecionado.
 elements.editHost.addEventListener("click", () => {
-  const agent = state.agents.find((item) => item.id === state.selectedAgentId);
+  const agent = selectedAgent();
   if (agent) openEditDialog(agent);
 });
 elements.deleteHost.addEventListener("click", () => {
-  const agent = state.agents.find((item) => item.id === state.selectedAgentId);
+  const agent = selectedAgent();
   if (agent) deleteAgent(agent);
 });
 document.addEventListener("keydown", (event) => {

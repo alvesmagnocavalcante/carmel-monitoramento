@@ -45,7 +45,6 @@ allowed_origins = [
 app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed_origins,
-    allow_credentials=False,
     allow_methods=["GET", "POST", "PATCH", "DELETE"],
     allow_headers=["Authorization", "Content-Type", "X-Management-Key"],
 )
@@ -56,11 +55,7 @@ app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 def dashboard() -> FileResponse:
     return FileResponse(
         STATIC_DIR / "index.html",
-        headers={
-            "Cache-Control": "no-store, no-cache, must-revalidate",
-            "Pragma": "no-cache",
-            "Expires": "0",
-        },
+        headers={"Cache-Control": "no-store"},
     )
 
 

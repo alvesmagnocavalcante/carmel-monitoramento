@@ -6,9 +6,5 @@ __pycache__/
 *.db
 *.db-shm
 *.db-wal
-agent/.go-cache/
-agent/.go-mod-cache/
-agent/agent-windows-*.exe
-agent/agent-linux-*
 agent/dist/*.exe
 

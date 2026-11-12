@@ -157,6 +157,10 @@ class Database:
     def _columns(connection: Any, table: str) -> set[str]:
         return {row[1] for row in connection.execute(f"PRAGMA table_info({table})").fetchall()}
 
+    @staticmethod
+    def _agent_exists(connection: Any, agent_id: str) -> bool:
+        return connection.execute("SELECT 1 FROM agents WHERE id = ?", (agent_id,)).fetchone() is not None
+
     def record_heartbeat(self, payload: dict[str, Any]) -> datetime:
         received_at = utc_now()
         agent_timestamp = payload.get("timestamp")
@@ -348,10 +352,7 @@ class Database:
             return False
 
         with self.connect() as connection:
-            exists = row_as_dict(
-                connection.execute("SELECT id FROM agents WHERE id = ?", (agent_id,))
-            )
-            if not exists:
+            if not self._agent_exists(connection, agent_id):
                 return False
             values.append(agent_id)
             connection.execute(
@@ -361,10 +362,7 @@ class Database:
 
     def delete_agent(self, agent_id: str) -> bool:
         with self.connect() as connection:
-            exists = row_as_dict(
-                connection.execute("SELECT id FROM agents WHERE id = ?", (agent_id,))
-            )
-            if not exists:
+            if not self._agent_exists(connection, agent_id):
                 return False
             connection.execute("DELETE FROM metrics WHERE agent_id = ?", (agent_id,))
             connection.execute("DELETE FROM agents WHERE id = ?", (agent_id,))
@@ -373,12 +371,7 @@ class Database:
     def get_metrics(self, agent_id: str, minutes: int) -> list[dict[str, Any]] | None:
         cutoff = to_db_timestamp(utc_now() - timedelta(minutes=minutes))
         with self.connect() as connection:
-            exists = row_as_dict(
-                connection.execute(
-                    "SELECT id FROM agents WHERE id = ?", (agent_id,)
-                )
-            )
-            if not exists:
+            if not self._agent_exists(connection, agent_id):
                 return None
             bucket_s = max(1, -(-minutes * 60 // MAX_CHART_POINTS))
             rows = rows_as_dicts(

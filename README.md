@@ -53,8 +53,8 @@ Para publicar no GitHub Releases, crie e envie uma tag semântica. O workflow te
 compila e publica o executável e seu SHA-256 automaticamente:
 
 ```bash
-git tag agent-v1.0.0
-git push origin agent-v1.0.0
+git tag agent-vX.Y.Z       # a mesma versão de agentVersion em sysinfo.go
+git push origin agent-vX.Y.Z
 ```
 
 O repositório ou, no mínimo, os assets da release precisam estar acessíveis pelos
