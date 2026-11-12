@@ -132,7 +132,13 @@ function groupAgents() {
   return state.agents.filter((agent) => agent.group === state.selectedGroup);
 }
 
+// Host offline não tem uptime confiável: o último valor conhecido ficou para trás.
+function hostUptime(agent) {
+  return agent.status === "online" ? agent.latest_metric?.uptime_s ?? null : null;
+}
+
 function metricForSort(agent, key) {
+  if (key === "uptime") return hostUptime(agent) ?? -1;
   if (key === "name") return agent.name.toLocaleLowerCase("pt-BR");
   if (key === "status") return agent.status;
   if (key === "last_seen") return agent.last_seen ? new Date(agent.last_seen).getTime() : 0;
@@ -214,6 +220,14 @@ function networkCell(agent) {
   return createCell("Rede", wrapper, "c-net");
 }
 
+function uptimeCell(agent) {
+  const uptime = hostUptime(agent);
+  const value = document.createElement("span");
+  value.className = "uptime";
+  value.textContent = uptime === null ? "—" : formatDuration(uptime);
+  return createCell("Uptime", value, "c-uptime");
+}
+
 // Discos fixos com uso acima de FULL_DISK_PERCENT (ou o disco do sistema, para agentes antigos).
 function fullVolumes(agent) {
   if (!agent.volumes?.length) {
@@ -267,6 +281,7 @@ function hostRow(agent) {
     metricCell("Memória", metric?.memory_percent, "c-mem"),
     metricCell("Disco", metric?.disk_percent, "c-disk"),
     networkCell(agent),
+    uptimeCell(agent),
     createCell("Último contato", relativeTime(agent.last_seen), "c-last last-contact"),
   );
   row.addEventListener("click", (event) => {
@@ -279,7 +294,7 @@ function groupHeader(group, count) {
   const row = document.createElement("tr");
   row.className = "group-header";
   const cell = document.createElement("td");
-  cell.colSpan = 7;
+  cell.colSpan = 8;
 
   const content = document.createElement("div");
   content.className = "group-header-content";

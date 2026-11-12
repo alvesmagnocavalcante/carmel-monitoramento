@@ -180,11 +180,12 @@ h2 { font-size: 19px; letter-spacing: 3px; line-height: 1.2; }
 }
 .host-table td { padding: 14px; text-align: left; border-bottom: 1px solid var(--line); vertical-align: middle; }
 /* Larguras proporcionais: as colunas dividem a tabela de forma equilibrada em qualquer tela. */
-.host-table .col-host { width: 25%; }
-.host-table .col-status { width: max(11%, 136px); }
-.host-table .col-metric { width: 13%; }
-.host-table .col-net { width: max(11%, 118px); }
-.host-table .col-last { width: 10%; }
+.host-table .col-host { width: 21%; }
+.host-table .col-status { width: max(10%, 136px); }
+.host-table .col-metric { width: 12%; }
+.host-table .col-net { width: max(10%, 118px); }
+.host-table .col-uptime { width: max(8%, 92px); }
+.host-table .col-last { width: max(9%, 150px); }
 .host-table tbody tr { cursor: pointer; transition: background 120ms ease; }
 .host-table tbody tr:hover { background: var(--hover); }
 .host-table tbody tr.selected { background: var(--selected); }
@@ -215,6 +216,7 @@ h2 { font-size: 19px; letter-spacing: 3px; line-height: 1.2; }
 :root[data-theme="dark"] .net-out { color: var(--chart-disk); }
 .status-stack { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; }
 .last-contact { color: var(--muted); white-space: nowrap; }
+.uptime { color: var(--ink-soft); font-size: 13px; font-weight: 500; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .icon-button { padding: 6px 12px; color: var(--ink-soft); font-size: 12px; font-weight: 600; border: 1px solid var(--line); border-radius: 999px; background: transparent; cursor: pointer; }
 .icon-button:hover { color: var(--ink); border-color: var(--control-line); }
 .host-actions { display: flex; gap: 8px; margin-top: 14px; }
@@ -237,8 +239,12 @@ h2 { font-size: 19px; letter-spacing: 3px; line-height: 1.2; }
    (e não display:none, para o colspan dos grupos continuar valendo). */
 @media (min-width: 1101px) {
   .layout.has-details .host-table .col-last,
-  .layout.has-details .host-table td.c-last { width: 0; padding: 0; overflow: hidden; font-size: 0; }
-  .layout.has-details .host-table .col-last button { display: none; }
+  .layout.has-details .host-table .col-uptime,
+  .layout.has-details .host-table td.c-last,
+  .layout.has-details .host-table td.c-uptime { width: 0; padding: 0; overflow: hidden; font-size: 0; }
+  .layout.has-details .host-table .col-last button,
+  .layout.has-details .host-table .col-uptime button { display: none; }
+  .layout.has-details .host-table .col-host { width: 30%; }
   .layout.has-details .host-table .col-status { width: 132px; }
   .layout.has-details .host-table .col-net { width: 106px; }
   .layout.has-details .host-table th { padding-inline: 8px; letter-spacing: 1px; }
@@ -360,7 +366,7 @@ h2 { font-size: 19px; letter-spacing: 3px; line-height: 1.2; }
     grid-template-areas:
       "host host status"
       "cpu mem disk"
-      "net net net"
+      "net net uptime"
       "last last last";
     gap: 14px 12px;
     align-items: center;
@@ -378,8 +384,9 @@ h2 { font-size: 19px; letter-spacing: 3px; line-height: 1.2; }
   .host-table td.c-mem { grid-area: mem; }
   .host-table td.c-disk { grid-area: disk; }
   .host-table td.c-net { grid-area: net; }
+  .host-table td.c-uptime { grid-area: uptime; }
   .host-table td.c-last { grid-area: last; }
-  .host-table td.c-cpu::before, .host-table td.c-mem::before, .host-table td.c-disk::before, .host-table td.c-net::before {
+  .host-table td.c-cpu::before, .host-table td.c-mem::before, .host-table td.c-disk::before, .host-table td.c-net::before, .host-table td.c-uptime::before {
     content: attr(data-label);
     display: block;
     margin-bottom: 6px;
