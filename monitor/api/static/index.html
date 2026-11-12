@@ -19,9 +19,9 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300..700&family=Cormorant:wght@400..700&display=swap">
-  <link rel="stylesheet" href="/static/styles.css?v=20261112-2">
+  <link rel="stylesheet" href="/static/styles.css?v=20261112-5">
   <script src="/static/chart.umd.min.js" defer></script>
-  <script src="/static/app.js?v=20261112-1" defer></script>
+  <script src="/static/app.js?v=20261112-2" defer></script>
   <script src="/static/tv.js?v=20261110-3" defer></script>
 </head>
 <body>
@@ -57,16 +57,24 @@
         <section class="stats" aria-label="Resumo do ambiente">
           <article class="stat">
             <span class="stat-label">Máquinas</span>
-            <strong id="total-agents">0</strong>
+            <div class="stat-row">
+              <strong id="total-agents">0</strong>
+              <small id="total-note"></small>
+            </div>
           </article>
           <article class="stat stat-online">
             <span class="stat-label">Online</span>
-            <strong id="online-agents">0</strong>
-            <small id="online-share"></small>
+            <div class="stat-row">
+              <strong id="online-agents">0</strong>
+              <small id="online-share"></small>
+            </div>
           </article>
           <article class="stat stat-offline">
             <span class="stat-label">Offline</span>
-            <strong id="offline-agents">0</strong>
+            <div class="stat-row">
+              <strong id="offline-agents">0</strong>
+              <small id="offline-share"></small>
+            </div>
           </article>
         </section>
 

@@ -133,7 +133,9 @@ h2 { font-size: 19px; letter-spacing: 3px; line-height: 1.2; }
 }
 .stat-label { color: var(--muted); font-size: 11px; font-weight: 600; letter-spacing: 3px; text-transform: uppercase; }
 .stat strong { color: var(--ink); font-family: var(--serif); font-size: 52px; font-weight: 500; line-height: 1; font-variant-numeric: lining-nums; }
-.stat small { color: var(--muted); font-size: 12px; }
+.stat { text-align: center; }
+.stat-row { display: flex; align-items: baseline; justify-content: center; gap: 14px; margin-top: 4px; }
+.stat small { color: var(--muted); font-size: 14px; }
 .stat-online strong { color: var(--online); }
 .stat-offline strong { color: var(--offline); }
 
@@ -342,6 +344,7 @@ h2 { font-size: 19px; letter-spacing: 3px; line-height: 1.2; }
   h1 { font-size: 16px; letter-spacing: 2px; }
   .stats { gap: 8px; margin-bottom: 16px; }
   .stat { padding: 14px; border-radius: var(--radius-sm); }
+  .stat-row { margin-top: 2px; }
   .stat-label { font-size: 10px; letter-spacing: 2px; }
   .stat strong { font-size: 38px; }
   .stat small { display: none; }

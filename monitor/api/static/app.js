@@ -34,6 +34,8 @@ const elements = {
   total: document.querySelector("#total-agents"),
   online: document.querySelector("#online-agents"),
   onlineShare: document.querySelector("#online-share"),
+  totalNote: document.querySelector("#total-note"),
+  offlineShare: document.querySelector("#offline-share"),
   hostFacts: document.querySelector("#host-facts"),
   editHost: document.querySelector("#edit-host"),
   deleteHost: document.querySelector("#delete-host"),
@@ -311,12 +313,15 @@ function groupHeader(group, count) {
 function renderSummary() {
   const grouped = groupAgents();
   const online = grouped.filter((agent) => agent.status === "online").length;
+  const offline = grouped.length - online;
+  const share = (count) => `${Math.round((count / grouped.length) * 100)}% do parque`;
+  const groups = new Set(grouped.map((agent) => agent.group)).size;
   elements.total.textContent = grouped.length;
   elements.online.textContent = online;
-  elements.offline.textContent = grouped.length - online;
-  elements.onlineShare.textContent = grouped.length
-    ? `${Math.round((online / grouped.length) * 100)}% do parque`
-    : "";
+  elements.offline.textContent = offline;
+  elements.totalNote.textContent = groups ? `em ${groups} ${groups === 1 ? "grupo" : "grupos"}` : "";
+  elements.onlineShare.textContent = grouped.length ? share(online) : "";
+  elements.offlineShare.textContent = !grouped.length ? "" : offline ? share(offline) : "nenhuma parada";
 }
 
 // "Intel(R) Core(TM) i3-3220 CPU @ 3.30GHz" vira "Intel Core i3-3220 @ 3.30GHz".
