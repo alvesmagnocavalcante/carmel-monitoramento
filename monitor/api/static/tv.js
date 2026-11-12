@@ -46,7 +46,7 @@ const tv = {
 // 0 = offline, 1 = disco cheio, 2 = normal: o que precisa de atenção vem primeiro.
 function tvPriority(agent) {
   if (agent.status === "offline") return 0;
-  return fullVolumes(agent).length ? 1 : 2;
+  return needsAttention(agent) ? 1 : 2;
 }
 
 function tvBar(label, percent) {
@@ -66,7 +66,7 @@ function tvTile(agent) {
   const full = fullVolumes(agent);
   const metric = agent.latest_metric;
   const tile = document.createElement("article");
-  tile.className = `tv-tile ${agent.status}${full.length ? " full" : ""}`;
+  tile.className = `tv-tile ${agent.status}${full.length ? " full" : ""}${needsAttention(agent) ? " alert" : ""}`;
 
   const head = document.createElement("div");
   head.className = "tv-tile-head";
@@ -76,13 +76,16 @@ function tvTile(agent) {
   name.textContent = agent.name;
   name.title = agent.name;
   head.append(dot, name);
-  if (full.length) {
+  const flags = [];
+  if (full.length) flags.push(["Disco cheio", full.map((volume) => `${volume.mount} ${Math.round(volume.percent)}%`).join(" · ")]);
+  if (highMemory(agent)) flags.push(["Memória alta", `${Math.round(metric.memory_percent)}% em uso`]);
+  flags.forEach(([text, title]) => {
     const flag = document.createElement("span");
     flag.className = "tv-flag";
-    flag.textContent = "Disco cheio";
-    flag.title = full.map((volume) => `${volume.mount} ${Math.round(volume.percent)}%`).join(" · ");
+    flag.textContent = text;
+    flag.title = title;
     head.append(flag);
-  }
+  });
 
   const bars = document.createElement("div");
   bars.className = "tv-bars";

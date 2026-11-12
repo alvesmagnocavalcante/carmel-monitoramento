@@ -90,6 +90,14 @@ h2 { font-size: 19px; letter-spacing: 3px; line-height: 1.2; }
 
 :is(select, input, button):focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
+/* Troca de tema suave: a classe só existe durante a troca (ver setTheme em app.js). */
+@keyframes fade-in { from { opacity: 0; } }
+html.theme-fading, html.theme-fading *, html.theme-fading *::before, html.theme-fading *::after {
+  transition: background-color 350ms ease, color 350ms ease, border-color 350ms ease,
+    fill 350ms ease, stroke 350ms ease, box-shadow 350ms ease !important;
+}
+html.theme-fading .logo { animation: fade-in 350ms ease; }
+
 /* ---------- Estrutura ---------- */
 .app { width: min(1600px, 100%); margin: 0 auto; padding: 0 48px 40px; }
 
@@ -193,6 +201,19 @@ h2 { font-size: 19px; letter-spacing: 3px; line-height: 1.2; }
 .host-table tbody tr.selected { background: var(--selected); }
 .host-table tbody tr:last-child td { border-bottom: 0; }
 
+/* Alerta (offline, disco cheio, memória alta): pulso suave no card do host. */
+.host-table tbody tr { --alert-base: transparent; }
+@keyframes alert-pulse {
+  0%, 100% { background-color: color-mix(in srgb, var(--offline) 3%, var(--alert-base)); }
+  50% { background-color: color-mix(in srgb, var(--offline) 20%, var(--alert-base)); }
+}
+.host-table tbody tr.alert { animation: alert-pulse 2s ease-in-out infinite; }
+.host-table tbody tr.alert.selected { animation: none; }
+@media (prefers-reduced-motion: reduce) {
+  .host-table tbody tr.alert { animation: none; background-color: color-mix(in srgb, var(--offline) 12%, var(--alert-base)); }
+  .tv-tile.alert { animation: none; }
+}
+
 .host-table tbody .group-header,
 .host-table tbody .group-header:hover { background: transparent; cursor: default; }
 .host-table tbody .group-header td { padding: 22px 14px 8px; border-bottom: 0; }
@@ -275,6 +296,13 @@ h2 { font-size: 19px; letter-spacing: 3px; line-height: 1.2; }
   background: var(--card);
 }
 .details[hidden] { display: none; }
+/* Entra deslizando e sai da mesma forma (a classe closing vem de setDetailsOpen em app.js). */
+@keyframes details-in { from { opacity: 0; transform: translateX(28px); } }
+@keyframes details-out { to { opacity: 0; transform: translateX(28px); } }
+@keyframes sheet-in { from { opacity: 0; transform: translateY(32px); } }
+@keyframes sheet-out { to { opacity: 0; transform: translateY(32px); } }
+.details { animation: details-in 260ms cubic-bezier(0.2, 0.7, 0.2, 1); }
+.details.closing { animation: details-out 180ms ease forwards; }
 .details-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
 .details-host { margin-top: 6px; color: var(--muted); font-size: 12px; }
 .close-button { display: grid; place-items: center; flex: none; width: 36px; height: 36px; color: var(--ink-soft); border: 1px solid var(--line); border-radius: 999px; background: transparent; cursor: pointer; }
@@ -306,6 +334,17 @@ h2 { font-size: 19px; letter-spacing: 3px; line-height: 1.2; }
 .metric-dot.disk { background: var(--chart-disk); }
 .metric-dot.network { background: var(--chart-net-in); }
 .chart-wrap { position: relative; height: 170px; }
+/* Enquanto o histórico não chega, os gráficos mostram um brilho passando. */
+@keyframes shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+.details.loading .chart-wrap::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: var(--radius-sm);
+  background: linear-gradient(100deg, transparent 30%, color-mix(in srgb, var(--ink) 9%, transparent) 50%, transparent 70%) 0 0 / 200% 100%;
+  animation: shimmer 1.3s linear infinite;
+  pointer-events: none;
+}
 
 /* ---------- Diálogo e botões ---------- */
 .edit-dialog { width: min(460px, calc(100% - 32px)); padding: 0; color: var(--ink-soft); border: 1px solid var(--line); border-radius: var(--radius); background: var(--card); }
@@ -328,7 +367,8 @@ h2 { font-size: 19px; letter-spacing: 3px; line-height: 1.2; }
   .layout.has-details { grid-template-columns: minmax(0, 1fr); }
 
   /* O histórico vira uma folha em tela cheia. */
-  .details { position: fixed; inset: 0; z-index: 20; max-height: none; padding: 20px 20px 32px; border: 0; border-radius: 0; }
+  .details { position: fixed; inset: 0; z-index: 20; max-height: none; padding: 20px 20px 32px; border: 0; border-radius: 0; animation-name: sheet-in; }
+  .details.closing { animation-name: sheet-out; }
   .details-head { position: sticky; top: -20px; z-index: 1; margin: -20px -20px 16px; padding: 20px; background: var(--card); border-bottom: 1px solid var(--line); }
   .chart-stack { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   body.sheet-open { overflow: hidden; }
@@ -377,6 +417,7 @@ h2 { font-size: 19px; letter-spacing: 3px; line-height: 1.2; }
     border: 1px solid var(--line);
     border-radius: var(--radius);
     background: var(--field);
+    --alert-base: var(--field);
   }
   .host-table tbody tr.selected { border-color: var(--accent); background: var(--selected); }
   .host-table td { display: block; min-width: 0; padding: 0; border: 0; }
@@ -456,6 +497,11 @@ body.tv-active .app { display: none; }
 .tv-tile.offline { border-color: var(--offline); background: color-mix(in srgb, var(--offline) 11%, var(--card)); }
 .tv-tile.offline .tv-bars { opacity: 0.4; }
 .tv-tile.full { border-color: var(--accent-text); }
+@keyframes tv-alert-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 transparent; }
+  50% { box-shadow: 0 0 1.1em 0.1em color-mix(in srgb, var(--offline) 60%, transparent); }
+}
+.tv-tile.alert { border-color: var(--offline); animation: tv-alert-pulse 2s ease-in-out infinite; }
 .tv-tile-head { display: flex; align-items: center; gap: 0.6em; min-width: 0; }
 .tv-tile-head strong { flex: 1; min-width: 0; overflow: hidden; color: var(--ink); font-size: 1.1em; text-overflow: ellipsis; white-space: nowrap; }
 .tv-dot { flex: none; width: 0.6em; height: 0.6em; border-radius: 50%; background: var(--online); }
@@ -471,3 +517,8 @@ body.tv-active .app { display: none; }
 
 @media (max-width: 760px) { #tv-toggle { display: none; } }
 @media (max-width: 1100px) { .tv-head { grid-template-columns: 1fr auto; } .tv-kpis { grid-column: 1 / -1; order: 3; } }
+
+/* Quem pede menos movimento no sistema não vê as animações da interface. */
+@media (prefers-reduced-motion: reduce) {
+  .details, .details.closing, html.theme-fading .logo, .details.loading .chart-wrap::after { animation: none; }
+}

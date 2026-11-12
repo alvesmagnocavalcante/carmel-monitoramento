@@ -3,6 +3,11 @@ const AGENTS_REFRESH_MS = 30_000;
 const METRICS_REFRESH_MS = 180_000;
 const HIGH_USAGE_PERCENT = 85;
 const FULL_DISK_PERCENT = 90;
+const MEMORY_ALERT_PERCENT = 90;
+const THEME_FADE_MS = 350;
+const DETAILS_CLOSE_MS = 180;
+const CHART_ANIMATION_MS = 450;
+const METRICS_CACHE_LIMIT = 24;
 const BYTES_PER_GB = 1024 ** 3;
 
 const state = {
@@ -17,6 +22,7 @@ const state = {
   charts: {},
   refreshing: false,
   metricsLoadedAt: 0,
+  metricsCache: new Map(),
   tv: false,
 };
 
@@ -246,6 +252,23 @@ function fullVolumes(agent) {
     .filter((volume) => volume.percent >= FULL_DISK_PERCENT);
 }
 
+function highMemory(agent) {
+  return agent.status === "online" && agent.latest_metric?.memory_percent >= MEMORY_ALERT_PERCENT;
+}
+
+// Offline, disco cheio ou memória alta: o card do host pulsa para chamar atenção.
+function needsAttention(agent) {
+  return agent.status === "offline" || fullVolumes(agent).length > 0 || highMemory(agent);
+}
+
+function warningBadge(text, title) {
+  const warning = document.createElement("span");
+  warning.className = "badge warn";
+  warning.textContent = text;
+  warning.title = title;
+  return warning;
+}
+
 function statusCell(agent) {
   const stack = document.createElement("div");
   stack.className = "status-stack";
@@ -256,11 +279,10 @@ function statusCell(agent) {
 
   const full = fullVolumes(agent);
   if (full.length) {
-    const warning = document.createElement("span");
-    warning.className = "badge warn";
-    warning.textContent = "Disco cheio";
-    warning.title = full.map((volume) => `${volume.mount} ${Math.round(volume.percent)}%`).join(" · ");
-    stack.append(warning);
+    stack.append(warningBadge("Disco cheio", full.map((volume) => `${volume.mount} ${Math.round(volume.percent)}%`).join(" · ")));
+  }
+  if (highMemory(agent)) {
+    stack.append(warningBadge("Memória alta", `${Math.round(agent.latest_metric.memory_percent)}% em uso`));
   }
   return createCell("Status", stack, "c-status");
 }
@@ -268,6 +290,7 @@ function statusCell(agent) {
 function hostRow(agent) {
   const row = document.createElement("tr");
   if (agent.id === state.selectedAgentId) row.classList.add("selected");
+  if (needsAttention(agent)) row.classList.add("alert");
 
   const hostButton = document.createElement("button");
   hostButton.type = "button";
@@ -507,7 +530,7 @@ function createLineChart(canvasId, colorVars, labels) {
     options: {
       responsive: true,
       maintainAspectRatio: false,
-      animation: false,
+      animation: { duration: CHART_ANIMATION_MS, easing: "easeOutQuart" },
       interaction: { intersect: false, mode: "index" },
       scales: {
         x: { grid: { display: false }, ticks: { maxTicksLimit: 5 } },
@@ -529,16 +552,23 @@ function initializeCharts() {
   state.charts.network = createLineChart("network-chart", ["--chart-net-in", "--chart-net-out"], ["Recebido", "Enviado"]);
 }
 
+let themeFadeTimer;
+
+// A classe theme-fading liga as transições de cor do CSS só durante a troca, para ela ser suave.
 function setTheme(theme) {
-  document.documentElement.dataset.theme = theme;
+  const root = document.documentElement;
+  root.classList.add("theme-fading");
+  root.dataset.theme = theme;
   try { localStorage.setItem("theme", theme); } catch (error) { /* sem armazenamento local */ }
   Object.values(state.charts).forEach(styleChart);
+  window.clearTimeout(themeFadeTimer);
+  themeFadeTimer = window.setTimeout(() => root.classList.remove("theme-fading"), THEME_FADE_MS + 100);
 }
 
 function updateChart(chart, labels, series) {
   chart.data.labels = labels;
   chart.data.datasets.forEach((dataset, index) => { dataset.data = series[index]; });
-  chart.update("none");
+  chart.update();
 }
 
 function networkRates(metrics) {
@@ -557,14 +587,7 @@ function networkRates(metrics) {
   return { labels, received, sent };
 }
 
-async function refreshMetrics() {
-  if (!state.selectedAgentId) return;
-  const selectedId = state.selectedAgentId;
-  const response = await fetch(`/api/agents/${encodeURIComponent(selectedId)}/metrics?minutes=${elements.period.value}`);
-  if (!response.ok) throw new Error(`Falha ao buscar métricas: ${response.status}`);
-  const metrics = await response.json();
-  if (selectedId !== state.selectedAgentId) return;
-  state.metricsLoadedAt = Date.now();
+function paintMetrics(metrics) {
   const labels = metrics.map((metric) => formatTime(metric.received_at));
   updateChart(state.charts.cpu, labels, [metrics.map((metric) => metric.cpu_percent)]);
   updateChart(state.charts.memory, labels, [metrics.map((metric) => metric.memory_percent)]);
@@ -573,12 +596,63 @@ async function refreshMetrics() {
   updateChart(state.charts.network, network.labels, [network.received, network.sent]);
 }
 
+const metricsKey = () => `${state.selectedAgentId}:${elements.period.value}`;
+
+async function refreshMetrics() {
+  if (!state.selectedAgentId) return;
+  const selectedId = state.selectedAgentId;
+  const key = metricsKey();
+  const response = await fetch(`/api/agents/${encodeURIComponent(selectedId)}/metrics?minutes=${elements.period.value}`);
+  if (!response.ok) throw new Error(`Falha ao buscar métricas: ${response.status}`);
+  const metrics = await response.json();
+  state.metricsCache.delete(key);
+  state.metricsCache.set(key, metrics);
+  if (state.metricsCache.size > METRICS_CACHE_LIMIT) {
+    state.metricsCache.delete(state.metricsCache.keys().next().value);
+  }
+  if (selectedId !== state.selectedAgentId || key !== metricsKey()) return;
+  state.metricsLoadedAt = Date.now();
+  paintMetrics(metrics);
+}
+
+// Ao abrir um host (ou trocar o período): mostra na hora o que já se conhece, ou um brilho de
+// carregamento, e atualiza quando a API responder.
+async function loadMetrics() {
+  const cached = state.metricsCache.get(metricsKey());
+  if (cached) {
+    paintMetrics(cached);
+  } else {
+    paintMetrics([]);
+    elements.details.classList.add("loading");
+  }
+  try {
+    await refreshMetrics();
+  } finally {
+    elements.details.classList.remove("loading");
+  }
+}
+
 /* ---------- Histórico: abre ao clicar no host e recolhe ao clicar de novo ---------- */
 
+let detailsCloseTimer;
+
+// Ao fechar, o painel sai deslizando (classe closing) e só depois some e devolve o espaço à tabela.
 function setDetailsOpen(open) {
-  elements.details.hidden = !open;
-  elements.layout.classList.toggle("has-details", open);
-  document.body.classList.toggle("sheet-open", open);
+  window.clearTimeout(detailsCloseTimer);
+  elements.details.classList.remove("closing");
+  if (open) {
+    elements.details.hidden = false;
+    elements.layout.classList.add("has-details");
+    document.body.classList.add("sheet-open");
+    return;
+  }
+  elements.details.classList.add("closing");
+  detailsCloseTimer = window.setTimeout(() => {
+    elements.details.hidden = true;
+    elements.details.classList.remove("closing");
+    elements.layout.classList.remove("has-details");
+    document.body.classList.remove("sheet-open");
+  }, DETAILS_CLOSE_MS);
 }
 
 function closeDetails() {
@@ -599,7 +673,7 @@ async function selectAgent(agentId) {
   setDetailsOpen(true);
   renderHosts();
   try {
-    await refreshMetrics();
+    await loadMetrics();
   } catch (error) {
     console.error(error);
     setUpdated(false);
@@ -694,7 +768,7 @@ async function refresh() {
 
 /* ---------- Eventos ---------- */
 
-elements.period.addEventListener("change", () => refreshMetrics().catch(() => setUpdated(false)));
+elements.period.addEventListener("change", () => loadMetrics().catch(() => setUpdated(false)));
 elements.closeDetails.addEventListener("click", closeDetails);
 // Editar e excluir ficam no cartão do host selecionado.
 elements.editHost.addEventListener("click", () => {

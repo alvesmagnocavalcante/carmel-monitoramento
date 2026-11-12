@@ -125,7 +125,8 @@ class Database:
     @contextmanager
     def connect(self) -> Iterator[Any]:
         connection = self._open_connection()
-        connection.execute("PRAGMA foreign_keys=ON")
+        if self.backend == "sqlite":  # no Turso cada comando é uma ida à rede: só o necessário
+            connection.execute("PRAGMA foreign_keys=ON")
         try:
             yield connection
             if self.backend == "sqlite":
@@ -371,8 +372,6 @@ class Database:
     def get_metrics(self, agent_id: str, minutes: int) -> list[dict[str, Any]] | None:
         cutoff = to_db_timestamp(utc_now() - timedelta(minutes=minutes))
         with self.connect() as connection:
-            if not self._agent_exists(connection, agent_id):
-                return None
             bucket_s = max(1, -(-minutes * 60 // MAX_CHART_POINTS))
             rows = rows_as_dicts(
                 connection.execute(
@@ -394,6 +393,9 @@ class Database:
                     (agent_id, cutoff, bucket_s),
                 )
             )
+            # Caso comum: uma só ida ao banco. Sem pontos, confere se o agente existe.
+            if not rows and not self._agent_exists(connection, agent_id):
+                return None
         return [self._metric_from_row(row) for row in rows]
 
     @staticmethod
