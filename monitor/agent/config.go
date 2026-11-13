@@ -16,15 +16,18 @@ import (
 	"time"
 )
 
+// Valores padrão: intervalo de 60 s entre heartbeats e endereço da API em produção.
 const (
 	defaultInterval = 60 * time.Second
 	defaultAPIURL   = "https://monitoramento-carmel.fastapicloud.dev"
 )
 
-// Set at build time with: -X main.defaultAgentToken=<token>.
-// This keeps deployment credentials out of the source code.
+// defaultAgentToken é o token de acesso à API, injetado na compilação com
+// -X main.defaultAgentToken=<token>. Assim a credencial não fica no código-fonte.
 var defaultAgentToken string
 
+// Config reúne as configurações do agente, lidas do config.json (campos com "json").
+// AgentID é calculado em tempo de execução e nunca gravado no arquivo ("-").
 type Config struct {
 	APIURL          string `json:"api_url"`
 	Group           string `json:"group"`
@@ -33,11 +36,16 @@ type Config struct {
 	AgentID         string `json:"-"`
 }
 
+// loadConfig monta a configuração final. Ordem de prioridade: opção --group, variáveis
+// de ambiente, config.json e, por último, os padrões. Se algo foi preenchido
+// automaticamente (URL, token, grupo), o config.json é regravado para a próxima execução.
 func loadConfig(groupOverride string) (Config, error) {
 	config := Config{IntervalSeconds: int(defaultInterval.Seconds())}
 	path := configPath()
+	// configChanged indica se é preciso salvar o arquivo ao final.
 	configChanged := false
 
+	// Arquivo inexistente não é erro (primeira execução); qualquer outra falha é.
 	data, err := os.ReadFile(path)
 	if err == nil {
 		if err := json.Unmarshal(data, &config); err != nil {
@@ -58,6 +66,7 @@ func loadConfig(groupOverride string) (Config, error) {
 		config.Token = defaultAgentToken
 		configChanged = true
 	}
+	// O grupo vem da opção --group; se não houver, pergunta no console na primeira vez.
 	if strings.TrimSpace(groupOverride) != "" {
 		config.Group = strings.TrimSpace(groupOverride)
 		configChanged = true
@@ -72,6 +81,7 @@ func loadConfig(groupOverride string) (Config, error) {
 	if err := config.validate(); err != nil {
 		return Config{}, err
 	}
+	// Remove a "/" final para não gerar "//" ao montar o endereço do heartbeat.
 	config.APIURL = strings.TrimRight(config.APIURL, "/")
 	if configChanged {
 		if err := saveConfig(path, config); err != nil {
@@ -86,6 +96,8 @@ func loadConfig(groupOverride string) (Config, error) {
 	return config, nil
 }
 
+// promptGroup pergunta o grupo do computador ao técnico e lê a resposta (uma linha).
+// Recebe leitor e escritor como parâmetros para poder ser testada sem teclado.
 func promptGroup(reader io.Reader, writer io.Writer) (string, error) {
 	if _, err := fmt.Fprint(writer, "Informe o grupo deste computador: "); err != nil {
 		return "", fmt.Errorf("show group prompt: %w", err)
@@ -101,6 +113,7 @@ func promptGroup(reader io.Reader, writer io.Writer) (string, error) {
 	return group, nil
 }
 
+// saveConfig grava o config.json. A permissão 0o600 (só o dono lê) protege o token.
 func saveConfig(path string, config Config) error {
 	data, err := json.MarshalIndent(config, "", "  ")
 	if err != nil {
@@ -112,12 +125,16 @@ func saveConfig(path string, config Config) error {
 	return nil
 }
 
+// stableAgentID gera um identificador fixo a partir do grupo e do nome do computador.
+// Assim o mesmo PC mantém o mesmo ID entre reinícios, sem precisar gravá-lo em disco.
 func stableAgentID(group, hostname string) string {
 	value := strings.ToLower(strings.TrimSpace(group)) + "\x00" + strings.ToLower(hostname)
 	sum := sha256.Sum256([]byte(value))
 	return "agt_" + hex.EncodeToString(sum[:12])
 }
 
+// configPath decide onde está o config.json: variável CONFIG_PATH, depois a pasta
+// atual e, por fim, a pasta do executável (o caso normal quando roda como serviço).
 func configPath() string {
 	if path := os.Getenv("CONFIG_PATH"); path != "" {
 		return path
@@ -132,6 +149,8 @@ func configPath() string {
 	return filepath.Join(filepath.Dir(executable), "config.json")
 }
 
+// applyEnvironment sobrescreve a configuração com variáveis de ambiente, quando definidas
+// (API_URL, AGENT_GROUP, AGENT_TOKEN, INTERVAL_SECONDS). Útil para testes e ajustes rápidos.
 func applyEnvironment(config *Config) error {
 	if value := os.Getenv("API_URL"); value != "" {
 		config.APIURL = value
@@ -152,6 +171,8 @@ func applyEnvironment(config *Config) error {
 	return nil
 }
 
+// validate confere se a configuração final é utilizável, para falhar já na partida
+// com uma mensagem clara em vez de errar a cada envio.
 func (config Config) validate() error {
 	parsedURL, err := url.ParseRequestURI(config.APIURL)
 	if err != nil || (parsedURL.Scheme != "http" && parsedURL.Scheme != "https") || parsedURL.Host == "" {

@@ -1,4 +1,6 @@
 <!doctype html>
+<!-- Página única do painel Carmel Monitor. Aqui fica só a estrutura; o visual está em styles.css,
+     a busca de dados e a tabela em app.js e o modo apresentação (TV) em tv.js. -->
 <html lang="pt-BR">
 <head>
   <meta charset="utf-8">
@@ -15,17 +17,22 @@
       document.documentElement.dataset.theme = theme;
     })();
   </script>
+  <!-- Ícone, fontes (Plus Jakarta Sans e Cormorant) e estilos. O "?v=" no fim dos arquivos força o navegador
+       a baixar a versão nova: mude o valor quando alterar o arquivo. -->
   <link rel="icon" type="image/png" href="/static/img/carmel-icone.png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300..700&family=Cormorant:wght@400..700&display=swap">
   <link rel="stylesheet" href="/static/styles.css?v=20261112-7">
+  <!-- Scripts com "defer": rodam depois que a página carrega, nesta ordem (gráficos, painel, modo TV). -->
   <script src="/static/chart.umd.min.js" defer></script>
   <script src="/static/app.js?v=20261112-5" defer></script>
   <script src="/static/tv.js?v=20261112-1" defer></script>
 </head>
 <body>
+  <!-- Painel normal. É escondido por inteiro quando o modo apresentação está ativo. -->
   <div class="app">
+    <!-- Topo: logotipo (versão clara e escura, só uma aparece), título e botões de apresentação e de tema. -->
     <header class="topbar">
       <div class="brand">
         <img class="logo logo-light" src="/static/img/carmel-hoteis.png" alt="Carmel Hotéis">
@@ -52,8 +59,10 @@
       </div>
     </header>
 
+    <!-- Conteúdo principal: coluna da esquerda (resumo + tabela) e, ao lado, o painel de histórico. -->
     <main class="layout" id="layout">
       <div class="primary">
+        <!-- Resumo: três cartões com o total de máquinas, quantas estão online e offline (preenchidos pelo app.js). -->
         <section class="stats" aria-label="Resumo do ambiente">
           <article class="stat">
             <span class="stat-label">Máquinas</span>
@@ -78,6 +87,7 @@
           </article>
         </section>
 
+        <!-- Lista de máquinas: seletor de grupo, busca, filtro por status, tabela e paginação. -->
         <section class="panel" aria-labelledby="agents-title">
           <div class="panel-head">
             <div>
@@ -108,6 +118,7 @@
             </div>
           </div>
 
+          <!-- Tabela de hosts: o cabeçalho tem botões de ordenação; as linhas do tbody são criadas pelo app.js. -->
           <div class="host-table-wrap" id="host-table-wrap">
             <table class="host-table">
               <thead>
@@ -134,6 +145,7 @@
               <button type="button" id="next-page">Próxima</button>
             </div>
           </nav>
+          <!-- Mensagem exibida quando nenhum host atende aos filtros (fica oculta enquanto há resultados). -->
           <div class="empty-state" id="empty-state" hidden>
             <strong>Nenhum host encontrado</strong>
             <span>Ajuste os filtros ou execute o monitor-agent.exe em um computador.</span>
@@ -141,6 +153,8 @@
         </section>
       </div>
 
+      <!-- Painel lateral de histórico: abre ao clicar em um host. Mostra informações da máquina, o seletor
+           de período e quatro gráficos. No celular vira uma folha em tela cheia. -->
       <aside class="details" id="details" aria-labelledby="details-title" hidden>
         <div class="details-head">
           <div>
@@ -153,6 +167,7 @@
           </button>
         </div>
 
+        <!-- Ficha do host (sistema, CPU, memória, discos) com os botões de editar e excluir. -->
         <section class="host-card" aria-label="Informações do host">
           <p class="eyebrow">Informações do host</p>
           <div class="fact-grid" id="host-facts"></div>
@@ -173,6 +188,7 @@
           </select>
         </label>
 
+        <!-- Gráficos de CPU, memória, disco e rede; o app.js desenha cada um no seu canvas (biblioteca Chart.js). -->
         <div class="chart-stack">
           <article class="chart-card">
             <div class="chart-title"><span class="metric-dot cpu"></span>CPU <small>%</small></div>
@@ -194,13 +210,18 @@
       </aside>
     </main>
 
+    <!-- Rodapé com a origem dos dados. -->
     <footer class="page-footer">
       <span>Fonte: agentes monitor-agent instalados nos computadores</span>
       <span>TI · Carmel Hotéis</span>
     </footer>
   </div>
 
+  <!-- Modo apresentação (TV): tela cheia somente leitura, escondida até o botão "Apresentação" ou ?tv=1.
+       O tv.js preenche os números e monta os cartões dentro de #tv-body. -->
   <section class="tv" id="tv" aria-label="Modo apresentação" hidden>
+    <!-- Cabeçalho da TV: marca, indicadores (máquinas, online, offline, disco cheio), relógio e botões
+         (que somem sozinhos quando ninguém mexe no mouse). -->
     <header class="tv-head" id="tv-head">
       <div class="tv-brand">
         <img class="logo logo-light" src="/static/img/carmel-hoteis.png" alt="Carmel Hotéis">
@@ -231,8 +252,10 @@
         <button type="button" class="pill-button" id="tv-exit">Sair</button>
       </div>
     </header>
+    <!-- Área dos grupos e cartões, montada pelo tv.js. -->
     <div class="tv-body" id="tv-body"></div>
   </section>
+  <!-- Diálogo de edição: permite trocar o nome e o grupo de um host (aberto pelo botão "Editar host"). -->
   <dialog class="edit-dialog" id="edit-dialog">
     <form id="edit-agent-form">
       <div class="dialog-heading">

@@ -1,3 +1,17 @@
+"""Acesso ao banco de dados.
+
+Guarda dois tipos de dado:
+  - agents  : um registro por computador monitorado (nome, grupo, sistema...).
+  - metrics : uma linha por heartbeat recebido (CPU, memória, disco, rede, uptime...).
+
+Funciona com dois bancos, escolhidos pelas variáveis de ambiente (ver Database.from_environment):
+  - SQLite local (arquivo), usado em desenvolvimento;
+  - Turso (SQLite na nuvem), usado em produção.
+
+Regra de ouro deste arquivo: no Turso cada comando SQL é uma ida à rede, e as idas se enfileiram.
+Por isso tudo aqui tenta fazer o MÍNIMO de comandos por requisição.
+"""
+
 import json
 import os
 import sqlite3
@@ -7,13 +21,21 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
+# Quantos dias de histórico (metrics) são mantidos; o que for mais antigo é apagado.
 DEFAULT_RETENTION_DAYS = 14
+# De quanto em quanto tempo a limpeza do histórico pode rodar.
 PURGE_EVERY = timedelta(hours=6)
+# Máximo de pontos devolvidos por gráfico (períodos longos são agrupados em baldes).
 MAX_CHART_POINTS = 300
 # Janela em que um reenvio do agente ainda é reconhecido como duplicado.
 DEDUP_WINDOW = timedelta(minutes=10)
+# Por quanto tempo o que se sabe de um agente (hostname, SO...) vale sem reconferir no banco.
+KNOWN_AGENT_TTL = timedelta(hours=1)
 
 
+# Estrutura do banco. "IF NOT EXISTS" permite rodar a cada início da API sem recriar nada.
+# O índice (agent_id, received_at) é o que torna rápidas as buscas "últimas medições deste host"
+# e a limpeza do histórico antigo.
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS agents (
     id TEXT PRIMARY KEY,
@@ -48,32 +70,43 @@ ON metrics(agent_id, received_at);
 """
 
 
+# ---------- Funções auxiliares (datas e linhas do banco) ----------
+
+
 def utc_now() -> datetime:
+    # Todas as datas do sistema são guardadas e comparadas em UTC, para não depender de fuso horário.
     return datetime.now(timezone.utc)
 
 
 def to_db_timestamp(value: datetime) -> str:
+    # Data -> texto ISO 8601 em UTC (ex.: 2026-11-12T21:19:44+00:00). Datas sem fuso são tratadas como UTC.
     if value.tzinfo is None:
         value = value.replace(tzinfo=timezone.utc)
     return value.astimezone(timezone.utc).isoformat()
 
 
 def from_db_timestamp(value: str | None) -> datetime | None:
+    # Texto ISO guardado no banco -> data (ou None se vazio).
     return datetime.fromisoformat(value) if value else None
 
 
 def rows_as_dicts(cursor: Any) -> list[dict[str, Any]]:
+    # O banco devolve as linhas como tuplas; aqui viram dicionários {coluna: valor},
+    # que são mais fáceis de ler no resto do código.
     columns = [column[0] for column in cursor.description]
     return [dict(zip(columns, row, strict=True)) for row in cursor.fetchall()]
 
 
 def row_as_dict(cursor: Any) -> dict[str, Any] | None:
+    # Igual a rows_as_dicts, mas para uma linha só (None se não houver resultado).
     columns = [column[0] for column in cursor.description]
     row = cursor.fetchone()
     return dict(zip(columns, row, strict=True)) if row else None
 
 
 class Database:
+    """Tudo o que a API faz no banco. Cada método abre sua própria conexão curta."""
+
     def __init__(
         self,
         path: str | Path,
@@ -86,15 +119,24 @@ class Database:
         self.path = str(path)
         self.turso_url = turso_url
         self.turso_auth_token = turso_auth_token
+        # Permite injetar uma conexão pronta (usado nos testes).
         self.connection_factory = connection_factory
+        # "turso" quando há URL do Turso; senão "sqlite". Alguns comandos só valem num dos dois.
         self.backend = "turso" if turso_url else "sqlite"
         self.retention_days = retention_days
+        # Quando a limpeza do histórico rodou pela última vez (None = ainda não rodou).
         self._last_purge: datetime | None = None
+        # agent_id -> (hostname, os, intervalo e system_info como estão no banco, quando foi conferido).
+        # Cada ida ao banco custa caro (as chamadas ao Turso se enfileiram), então o heartbeat
+        # comum não consulta o agente: só grava a métrica.
+        self._known_agents: dict[str, tuple[dict[str, Any], datetime]] = {}
 
     @classmethod
     def from_environment(cls, default_path: str | Path) -> "Database":
+        """Monta o Database a partir das variáveis de ambiente (ver README)."""
         turso_url = os.getenv("TURSO_DATABASE_URL", "").strip()
         turso_auth_token = os.getenv("TURSO_AUTH_TOKEN", "").strip()
+        # URL e token do Turso só fazem sentido juntos; um sem o outro é erro de configuração.
         if bool(turso_url) != bool(turso_auth_token):
             raise RuntimeError(
                 "TURSO_DATABASE_URL and TURSO_AUTH_TOKEN must be configured together"
@@ -109,9 +151,11 @@ class Database:
         )
 
     def _open_connection(self) -> Any:
+        # Abre a conexão certa: a injetada (testes), a do Turso (produção) ou um arquivo SQLite.
         if self.connection_factory:
             return self.connection_factory()
         if self.turso_url:
+            # Importado só aqui: o libsql não é necessário em desenvolvimento com SQLite.
             import libsql
 
             return libsql.connect(
@@ -124,11 +168,14 @@ class Database:
 
     @contextmanager
     def connect(self) -> Iterator[Any]:
+        """Uso: `with self.connect() as connection:`. Abre, confirma (commit) ao sair sem erro,
+        desfaz (rollback) se der erro e sempre fecha a conexão."""
         connection = self._open_connection()
         if self.backend == "sqlite":  # no Turso cada comando é uma ida à rede: só o necessário
             connection.execute("PRAGMA foreign_keys=ON")
         try:
             yield connection
+            # O Turso já confirma cada comando sozinho (autocommit); só o SQLite precisa do commit.
             if self.backend == "sqlite":
                 connection.commit()
         except Exception:
@@ -139,13 +186,17 @@ class Database:
             connection.close()
 
     def initialize(self) -> None:
+        """Prepara o banco quando a API sobe: cria as tabelas, atualiza bancos antigos e
+        carrega o que se sabe dos agentes (para o heartbeat não precisar consultar)."""
         if self.backend == "sqlite":
             Path(self.path).parent.mkdir(parents=True, exist_ok=True)
         with self.connect() as connection:
             if self.backend == "sqlite":
+                # WAL permite ler enquanto se grava; NORMAL reduz esperas de disco sem risco real aqui.
                 connection.execute("PRAGMA journal_mode=WAL")
                 connection.execute("PRAGMA synchronous=NORMAL")
             connection.executescript(SCHEMA)
+            # Migração: bancos criados por versões antigas não têm algumas colunas.
             agent_columns = self._columns(connection, "agents")
             if "token_hash" in agent_columns:  # coluna legada, nunca usada
                 connection.execute("ALTER TABLE agents DROP COLUMN token_hash")
@@ -153,37 +204,81 @@ class Database:
                 connection.execute("ALTER TABLE agents ADD COLUMN system_info TEXT")
             if "volumes" not in self._columns(connection, "metrics"):
                 connection.execute("ALTER TABLE metrics ADD COLUMN volumes TEXT")
+            # Carrega de uma vez só o que já se sabe de cada agente (1 consulta no total).
+            now = utc_now()
+            for row in rows_as_dicts(
+                connection.execute(
+                    "SELECT id, hostname, os, expected_interval_s, system_info FROM agents"
+                )
+            ):
+                self._known_agents[row.pop("id")] = (row, now)
 
     @staticmethod
     def _columns(connection: Any, table: str) -> set[str]:
+        # Nomes das colunas de uma tabela (usado nas migrações).
         return {row[1] for row in connection.execute(f"PRAGMA table_info({table})").fetchall()}
 
     @staticmethod
     def _agent_exists(connection: Any, agent_id: str) -> bool:
         return connection.execute("SELECT 1 FROM agents WHERE id = ?", (agent_id,)).fetchone() is not None
 
+    def _known_agent(self, connection: Any, agent_id: str, now: datetime) -> dict[str, Any] | None:
+        """Hostname, SO, intervalo e system_info gravados; só consulta o banco se não souber ou se for velho."""
+        entry = self._known_agents.get(agent_id)
+        if entry and now - entry[1] < KNOWN_AGENT_TTL:
+            return entry[0]
+        # Não sabia ou a informação passou de 1 hora: confere no banco e guarda.
+        row = row_as_dict(
+            connection.execute(
+                "SELECT hostname, os, expected_interval_s, system_info FROM agents WHERE id = ?",
+                (agent_id,),
+            )
+        )
+        if row:
+            self._known_agents[agent_id] = (row, now)
+        else:
+            self._known_agents.pop(agent_id, None)
+        return row
+
+    def _remember_agent(self, payload: dict[str, Any], system_json: str | None, now: datetime) -> None:
+        # Guarda na memória o que acabou de ser gravado no banco, para os próximos heartbeats
+        # do mesmo agente saberem que não há nada novo a gravar.
+        self._known_agents[payload["agent_id"]] = (
+            {
+                "hostname": payload["hostname"],
+                "os": payload["os"],
+                "expected_interval_s": payload["interval_seconds"],
+                "system_info": system_json,
+            },
+            now,
+        )
+
     def record_heartbeat(self, payload: dict[str, Any]) -> datetime:
+        """Grava um heartbeat recebido de um agente. Devolve a hora de recebimento.
+
+        Passos:
+          1. Se o agente é novo, cadastra; se mudou hostname/SO/intervalo/sistema, atualiza.
+             (No caso comum, nada mudou e este passo não faz nenhuma consulta.)
+          2. Grava a medição (metrics), ignorando reenvios duplicados.
+          3. De tempos em tempos, apaga o histórico antigo.
+        """
         received_at = utc_now()
         agent_timestamp = payload.get("timestamp")
         agent_timestamp_db = (
             to_db_timestamp(agent_timestamp) if agent_timestamp else None
         )
         # Informação fixa do host (SO, CPU, RAM...): gravada só quando muda.
+        # sort_keys deixa o texto sempre igual para os mesmos dados, para a comparação funcionar.
         system = payload.get("system")
         system_json = json.dumps(system, sort_keys=True) if system else None
         volumes = payload.get("volumes")
         volumes_json = json.dumps(volumes) if volumes else None
         with self.connect() as connection:
-            # Leitura barata em vez de upsert a cada heartbeat: escrita só quando
-            # o agente é novo ou mudou hostname/os/intervalo. O last_seen vem da
-            # última métrica (ver list_agents).
-            known = row_as_dict(
-                connection.execute(
-                    "SELECT hostname, os, expected_interval_s, system_info FROM agents WHERE id = ?",
-                    (payload["agent_id"],),
-                )
-            )
+            # Escrita do agente só quando ele é novo ou mudou hostname/os/intervalo/sistema.
+            # O last_seen vem da última métrica (ver list_agents).
+            known = self._known_agent(connection, payload["agent_id"], received_at)
             if known is None:
+                # Agente novo: cadastra. O nome inicial é o hostname (o painel permite renomear).
                 connection.execute(
                     """
                     INSERT INTO agents (
@@ -203,12 +298,15 @@ class Database:
                         system_json,
                     ),
                 )
+                self._remember_agent(payload, system_json, received_at)
             elif (
                 known["hostname"] != payload["hostname"]
                 or known["os"] != payload["os"]
                 or known["expected_interval_s"] != payload["interval_seconds"]
                 or (system_json is not None and known["system_info"] != system_json)
             ):
+                # Algo mudou. COALESCE mantém o system_info antigo quando este heartbeat não
+                # trouxe o campo (agentes antigos não enviam).
                 connection.execute(
                     """
                     UPDATE agents SET hostname = ?, os = ?, expected_interval_s = ?,
@@ -224,6 +322,9 @@ class Database:
                         payload["agent_id"],
                     ),
                 )
+                self._remember_agent(payload, system_json or known["system_info"], received_at)
+            # Grava a medição. O "WHERE NOT EXISTS" evita duplicar quando o agente reenvia o mesmo
+            # heartbeat (ex.: a resposta se perdeu): mesma hora do agente dentro da janela de 10 min.
             connection.execute(
                 """
                 INSERT INTO metrics (
@@ -257,6 +358,7 @@ class Database:
         return received_at
 
     def _purge_if_due(self, now: datetime) -> None:
+        # Roda a limpeza do histórico no máximo a cada PURGE_EVERY (6 h). retention_days = 0 desliga.
         if self.retention_days <= 0:
             return
         if self._last_purge and now - self._last_purge < PURGE_EVERY:
@@ -265,19 +367,23 @@ class Database:
         self.purge_old_metrics(self.retention_days)
 
     def purge_old_metrics(self, days: int) -> None:
+        """Apaga as medições mais antigas que `days` dias (limita o tamanho do banco)."""
         cutoff = to_db_timestamp(utc_now() - timedelta(days=days))
         with self.connect() as connection:
-            # Por agente, para usar o índice (agent_id, received_at) em vez de varrer a tabela.
-            agent_ids = [row[0] for row in connection.execute("SELECT id FROM agents").fetchall()]
-            for agent_id in agent_ids:
-                connection.execute(
-                    "DELETE FROM metrics WHERE agent_id = ? AND received_at < ?",
-                    (agent_id, cutoff),
-                )
+            # Um comando só (cada ida ao banco custa caro). Filtrar por agente deixa o SQLite
+            # usar o índice (agent_id, received_at) em vez de varrer a tabela inteira.
+            connection.execute(
+                "DELETE FROM metrics WHERE agent_id IN (SELECT id FROM agents) AND received_at < ?",
+                (cutoff,),
+            )
 
     def list_agents(self, agent_id: str | None = None) -> list[dict[str, Any]]:
+        """Lista os hosts (ou só um, se agent_id for informado) com a última medição de cada um
+        e o status online/offline."""
         where, params = ("WHERE a.id = ?", (agent_id,)) if agent_id else ("", ())
         with self.connect() as connection:
+            # Uma consulta só traz tudo: o cadastro (a), a última medição (m) e a anterior (p).
+            # A anterior serve para calcular a velocidade de rede (diferença entre as duas).
             rows = rows_as_dicts(
                 connection.execute(
                     f"""
@@ -314,6 +420,7 @@ class Database:
         agents: list[dict[str, Any]] = []
         for row in rows:
             last_seen = from_db_timestamp(row["last_seen"])
+            # Online = houve contato há menos de 3 intervalos do agente (ex.: 3 x 60 s = 3 min).
             online = bool(
                 last_seen
                 and now - last_seen
@@ -341,6 +448,9 @@ class Database:
     def update_agent(
         self, agent_id: str, *, name: str | None, group: str | None
     ) -> bool:
+        """Renomeia e/ou muda o grupo de um host. Devolve False se o host não existe
+        (ou se nada foi pedido)."""
+        # Monta o UPDATE só com os campos informados.
         assignments: list[str] = []
         values: list[Any] = []
         if name is not None:
@@ -362,16 +472,25 @@ class Database:
         return True
 
     def delete_agent(self, agent_id: str) -> bool:
+        """Exclui um host e todo o histórico dele. Devolve False se o host não existe."""
         with self.connect() as connection:
             if not self._agent_exists(connection, agent_id):
                 return False
             connection.execute("DELETE FROM metrics WHERE agent_id = ?", (agent_id,))
             connection.execute("DELETE FROM agents WHERE id = ?", (agent_id,))
+        # Esquece o host na memória: se o agente voltar a enviar, ele é cadastrado de novo.
+        self._known_agents.pop(agent_id, None)
         return True
 
     def get_metrics(self, agent_id: str, minutes: int) -> list[dict[str, Any]] | None:
+        """Histórico dos últimos `minutes` minutos para os gráficos. Devolve None se o host não existe.
+
+        Para períodos longos há mais medições do que o gráfico comporta, então elas são agrupadas
+        em "baldes" de tempo (no máximo MAX_CHART_POINTS pontos): percentuais viram a média
+        do balde e contadores (bytes, uptime) ficam com o maior valor."""
         cutoff = to_db_timestamp(utc_now() - timedelta(minutes=minutes))
         with self.connect() as connection:
+            # Tamanho do balde em segundos (divisão para cima).
             bucket_s = max(1, -(-minutes * 60 // MAX_CHART_POINTS))
             rows = rows_as_dicts(
                 connection.execute(
@@ -418,11 +537,13 @@ class Database:
             ("net_sent_mbps", row["net_bytes_sent"], row["prev_net_sent"]),
         ):
             if now_bytes >= before_bytes:
+                # bytes -> bits (x 8), por segundo, em megabits (/ 1.000.000).
                 rates[key] = (now_bytes - before_bytes) * 8 / elapsed / 1_000_000
         return rates
 
     @staticmethod
     def _metric_from_row(row: dict[str, Any]) -> dict[str, Any]:
+        # Extrai de uma linha do banco só os campos de uma medição, convertendo as datas.
         return {
             "received_at": from_db_timestamp(row["received_at"]),
             "agent_timestamp": from_db_timestamp(row["agent_timestamp"]),

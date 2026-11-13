@@ -1,7 +1,10 @@
 ---
+# Playbook de desinstalação: para e remove o serviço e apaga a pasta do agente.
+# Reaproveita o role monitor_agent, mas executa apenas tasks/uninstall.yml.
 - name: Desinstalar o agente Carmel
   hosts: windows
   gather_facts: false
+  # Lotes e parada em caso de falha: mesmo critério da instalação (ver install_agent.yml).
   serial: "{{ rollout_batch | default('20%') }}"
   max_fail_percentage: 0
   tasks:

@@ -1,4 +1,8 @@
 ---
+# Handlers: tarefas que só rodam se alguma tarefa avisar com "notify" (porque algo mudou).
+# Este reinicia o serviço quando o binário ou o config.json mudaram, e não a cada execução,
+# evitando interromper a coleta sem necessidade. O handler roda no flush_handlers ou no fim do play,
+# uma única vez, mesmo que várias tarefas o chamem. O nome em "listen" é o que as tarefas usam em notify.
 - name: Reiniciar agente Carmel
   ansible.windows.win_service:
     name: '{{ monitor_agent_service_name }}'

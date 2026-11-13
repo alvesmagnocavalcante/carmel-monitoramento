@@ -2,6 +2,7 @@ package main
 
 import "testing"
 
+// Confere a extração do número da build a partir do texto de versão do kernel.
 func TestBuildNumber(t *testing.T) {
 	cases := map[string]string{
 		"10.0.26300.9711 Build 26300.9711": "26300.9711",
@@ -15,6 +16,7 @@ func TestBuildNumber(t *testing.T) {
 	}
 }
 
+// Confere que só IPv4 de rede válido é aceito (sem link-local, loopback, IPv6 ou lixo).
 func TestUsableIPv4(t *testing.T) {
 	cases := map[string]string{
 		"192.168.1.20/24":              "192.168.1.20",
@@ -30,6 +32,7 @@ func TestUsableIPv4(t *testing.T) {
 	}
 }
 
+// Confere o filtro de placas: aceita as reais ativas e rejeita desligadas, loopback e virtuais.
 func TestIsUsableInterface(t *testing.T) {
 	cases := []struct {
 		name  string
@@ -50,6 +53,7 @@ func TestIsUsableInterface(t *testing.T) {
 	}
 }
 
+// Confere a comparação de volumes, que ignora maiúsculas e a barra final.
 func TestSameVolume(t *testing.T) {
 	if !sameVolume("C:", `c:\`) {
 		t.Error("C: e c:\\ devem ser o mesmo volume")
@@ -59,6 +63,7 @@ func TestSameVolume(t *testing.T) {
 	}
 }
 
+// Confere que o IP principal vai para a frente da lista e que, sem IP principal, nada muda.
 func TestPrimaryFirst(t *testing.T) {
 	got := primaryFirst([]string{"10.0.0.2", "192.168.56.1", "172.16.0.9"}, "192.168.56.1")
 	want := []string{"192.168.56.1", "10.0.0.2", "172.16.0.9"}

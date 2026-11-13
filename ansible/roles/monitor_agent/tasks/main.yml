@@ -1,4 +1,9 @@
 ---
+# Tarefas de instalação/atualização do agente Carmel num PC Windows (executadas pelo role monitor_agent).
+# Ordem: validar entradas -> baixar e conferir o .exe -> gravar config -> proteger config -> registrar
+# o serviço -> iniciar -> remover versões antigas -> confirmar que está ativo.
+#
+# Bloco 1: validações. Falhar logo no início, com mensagem clara, evita uma instalação pela metade.
 - name: Validar repositório do agente
   ansible.builtin.assert:
     that:
@@ -7,6 +12,7 @@
       monitor_agent_github_repository deve estar no formato proprietario/repositorio.
     quiet: true
 
+# A tag precisa ser agent-vX.Y.Z, o mesmo padrão que o workflow de release publica.
 - name: Validar versão do agente
   ansible.builtin.assert:
     that:
@@ -15,6 +21,7 @@
       monitor_agent_release_tag não foi informado ou não segue agent-vX.Y.Z.
     quiet: true
 
+# O token é obrigatório; sem ele o agente instalado não conseguiria enviar dados à API.
 - name: Validar token do agente
   ansible.builtin.assert:
     that:
@@ -24,6 +31,7 @@
       Variable Group do Semaphore ou informe monitor_agent_token como variável Ansible.
     quiet: true
 
+# Sem grupo, as métricas do equipamento não seriam classificadas corretamente no dashboard.
 - name: Validar grupo do equipamento
   ansible.builtin.assert:
     that:
@@ -32,6 +40,7 @@
       monitor_agent_group não foi informado no inventário para este equipamento.
     quiet: true
 
+# Intervalo mínimo de 10s para não sobrecarregar a API nem o equipamento.
 - name: Validar intervalo de coleta
   ansible.builtin.assert:
     that:
@@ -39,6 +48,8 @@
     fail_msg: monitor_agent_interval_seconds deve ser igual ou superior a 10.
     quiet: true
 
+# Monta as URLs de download na Release do GitHub e o caminho final do .exe, que leva a versão no nome
+# (monitor-agent-agent-vX.Y.Z.exe). Cada versão vira um arquivo novo, sem sobrescrever o que está em uso.
 - name: Calcular URLs e caminho da versão do agente
   ansible.builtin.set_fact:
     monitor_agent_binary_url: >-
@@ -50,11 +61,15 @@
     monitor_agent_binary_path: >-
       {{ monitor_agent_install_dir }}\monitor-agent-{{ monitor_agent_release_tag }}.exe
 
+# Garante que a pasta de instalação exista.
 - name: Criar diretório do agente
   ansible.windows.win_file:
     path: '{{ monitor_agent_install_dir }}'
     state: directory
 
+# Baixa o .exe e valida o SHA-256 contra o arquivo .sha256 da mesma Release. Se o arquivo vier
+# corrompido ou adulterado, a tarefa falha e nada é instalado. force: false não baixa de novo se o arquivo
+# da versão já existe. O notify só dispara se houve download, para reiniciar o serviço apenas nesse caso.
 - name: Baixar binário validando integridade
   ansible.windows.win_get_url:
     url: '{{ monitor_agent_binary_url }}'
@@ -64,6 +79,8 @@
     force: false
   notify: restart carmel agent
 
+# Gera o config.json a partir do template. no_log evita que o token apareça nos logs do Semaphore.
+# O reinício só é pedido se o conteúdo do arquivo mudou.
 - name: Gravar configuração do agente
   ansible.windows.win_template:
     src: config.json.j2
@@ -71,6 +88,8 @@
   no_log: true
   notify: restart carmel agent
 
+# Descobre os nomes das contas SYSTEM, LocalService e Administradores a partir dos SIDs fixos do Windows.
+# Os nomes mudam conforme o idioma do Windows (ex.: "SERVIÇO LOCAL"), mas os SIDs são sempre os mesmos.
 - name: Resolver contas internas do Windows pelo SID
   ansible.windows.win_powershell:
     script: |
@@ -88,6 +107,9 @@
       }
   register: monitor_agent_builtin_accounts
 
+# Protege o config.json (tem o token): SYSTEM e Administradores com controle total e o serviço
+# (LocalService) só com leitura. As regras são adicionadas antes de remover a herança, para o serviço
+# não perder o acesso.
 - name: Autorizar leitura da configuração ao serviço
   ansible.windows.win_acl:
     path: '{{ monitor_agent_config_path }}'
@@ -103,6 +125,8 @@
     - user: '{{ monitor_agent_builtin_accounts.result.local_service }}'
       rights: Read
 
+# Remove as permissões herdadas da pasta (ex.: grupo Users), para que usuários comuns do PC
+# não consigam ler o token. Ficam apenas as regras explícitas acima.
 - name: Remover permissões herdadas da configuração
   ansible.windows.win_acl_inheritance:
     path: '{{ monitor_agent_config_path }}'
@@ -112,6 +136,9 @@
 # O módulo win_service deixou o serviço em um estado que o SCM recusa iniciar
 # (erro 1068 sem dependências). Por isso o registro usa sc.exe diretamente,
 # e somente sobre o serviço CarmelMonitorAgent.
+# Contexto: o serviço é gerenciado direto pelo sc.exe: início automático (start= auto), conta
+# LocalService (poucos privilégios) e, em falha, reinício automático após 5s, 15s e 60s (zera a contagem
+# após 24h). Só cria ou atualiza se for preciso, então repetir a execução não altera nada.
 - name: Registrar ou atualizar o serviço (sc.exe)
   ansible.windows.win_powershell:
     error_action: stop
@@ -121,11 +148,14 @@
     script: |
       param([string] $ServiceName, [string] $BinaryPath)
 
+      # Trava de segurança: este script só pode mexer no serviço CarmelMonitorAgent.
       if ($ServiceName -ne 'CarmelMonitorAgent') { throw "Serviço inesperado: $ServiceName" }
       $Ansible.Changed = $false
+      # Caminho esperado do .exe, entre aspas (necessário por causa dos espaços em "Program Files").
       $expected = "`"$BinaryPath`""
       $svc = Get-CimInstance Win32_Service -Filter "Name='$ServiceName'"
 
+      # Serviço ainda não existe: cria, define a descrição e a política de reinício automático.
       if (-not $svc) {
           & sc.exe create $ServiceName binPath= $expected start= auto obj= 'NT AUTHORITY\LocalService' DisplayName= 'Carmel Monitor Agent' | Out-Null
           if ($LASTEXITCODE -ne 0) { throw "sc create falhou: $LASTEXITCODE" }
@@ -139,8 +169,12 @@
           if ($LASTEXITCODE -ne 0) { throw "sc config falhou: $LASTEXITCODE" }
           $Ansible.Changed = $true
       }
+  # Só avisa o handler de reinício se o script marcou Changed (criou ou trocou o caminho do serviço).
   notify: restart carmel agent
 
+# Inicia o serviço. Se falhar, o bloco rescue abaixo coleta diagnósticos, pois o Windows devolve
+# mensagens genéricas (foi criado para investigar o erro 1068, "não foi possível iniciar o serviço").
+# Se já estiver rodando, nada muda; a troca de versão é feita pelo handler de reinício.
 - name: Iniciar o serviço
   block:
     - name: Iniciar Carmel Monitor Agent
@@ -148,7 +182,10 @@
         name: '{{ monitor_agent_service_name }}'
         state: started
 
+  # Rescue (só executa se o início falhou): diagnóstico da falha ao iniciar. Não faz parte do caminho
+  # normal; quando acionado, tenta recriar o serviço e, se ainda assim não subir, falha mostrando a causa.
   rescue:
+    # Mostra o erro real do sc.exe, o estado do serviço e a configuração dele no registro (só leitura).
     - name: Capturar erro real do Windows ao iniciar (somente este serviço)
       ansible.windows.win_shell: |
         sc.exe start {{ monitor_agent_service_name }}
@@ -160,10 +197,13 @@
       changed_when: false
       failed_when: false
 
+    # Exibe no log do Semaphore o que foi capturado acima.
     - name: Mostrar erro real do sc start
       ansible.builtin.debug:
         msg: '{{ monitor_agent_sc_start.stdout_lines | default([]) }}'
 
+    # Última tentativa: apaga e recria somente o serviço Carmel e tenta iniciar de novo.
+    # O serviço só é excluído se estiver parado e apontar para a pasta Carmel Monitor.
     - name: Recriar somente este serviço do zero com sc.exe e tentar iniciar
       ansible.windows.win_powershell:
         error_action: stop
@@ -199,10 +239,13 @@
           $Ansible.Result = @{ state = $state; log = $log }
       register: monitor_agent_recreate
 
+    # Exibe o estado final e o log da recriação.
     - name: Mostrar resultado da recriação
       ansible.builtin.debug:
         var: monitor_agent_recreate.result
 
+    # Se o serviço continua fora do ar, reúne evidências (eventos do Windows, permissões, bloqueios de
+    # antivírus/AppLocker, dependências). Tudo aqui é somente leitura e não altera o sistema.
     - name: Coletar diagnóstico do Service Control Manager
       when: monitor_agent_recreate.result.state | default('') != 'Running'
       ansible.windows.win_powershell:
@@ -291,14 +334,18 @@
           }
       register: monitor_agent_start_diagnostics
 
+    # Interrompe a execução neste host mostrando o diagnóstico completo, para o TI saber a causa.
     - name: Informar causa da falha do serviço
       when: monitor_agent_recreate.result.state | default('') != 'Running'
       ansible.builtin.fail:
         msg: '{{ monitor_agent_start_diagnostics.result | to_nice_json }}'
 
+# Executa o reinício pendente agora, antes da limpeza: assim a versão antiga só é apagada
+# depois que a nova está ativa, e não se perde o agente caso a nova falhe.
 - name: Aplicar reinício antes da limpeza
   ansible.builtin.meta: flush_handlers
 
+# Lista os executáveis de versões do agente que existem na pasta.
 - name: Localizar versões antigas
   ansible.windows.win_find:
     paths: '{{ monitor_agent_install_dir }}'
@@ -306,6 +353,8 @@
     file_type: file
   register: monitor_agent_versions
 
+# Remove as versões antigas (menos a atual, comparando sem diferenciar maiúsculas). Fica por último
+# de propósito, para manter a versão anterior disponível se a instalação falhar antes.
 - name: Remover versões antigas
   ansible.windows.win_file:
     path: '{{ item.path }}'
@@ -313,6 +362,7 @@
   loop: '{{ monitor_agent_versions.files }}'
   when: item.path | lower != monitor_agent_binary_path | lower
 
+# Verificação final: consulta o serviço e exige que esteja iniciado; senão, a execução falha neste host.
 - name: Consultar estado final do serviço
   ansible.windows.win_service_info:
     name: '{{ monitor_agent_service_name }}'

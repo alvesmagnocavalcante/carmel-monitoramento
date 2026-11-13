@@ -1,4 +1,8 @@
 ---
+# Tarefas de desinstalação do agente (executadas por playbooks/uninstall_agent.yml).
+#
+# Trava de segurança: como esta rotina apaga uma pasta inteira, só prossegue se o nome do serviço
+# e a pasta forem exatamente os esperados (evita apagar outro local por variável errada).
 - name: Validar destino da desinstalação
   ansible.builtin.assert:
     that:
@@ -7,11 +11,14 @@
     fail_msg: Caminho ou nome do serviço inesperado; desinstalação cancelada.
     quiet: true
 
+# Verifica se o serviço existe, para que a remoção seja segura de repetir (idempotente).
 - name: Consultar serviço do agente
   ansible.windows.win_service_info:
     name: '{{ monitor_agent_service_name }}'
   register: monitor_agent_service_before_removal
 
+# Usa sc.exe (ferramenta nativa do Windows) para parar e excluir o serviço, igual à instalação.
+# Só age se o serviço apontar para a pasta Carmel Monitor; senão aborta sem remover nada.
 - name: Parar e remover o serviço do agente (sc.exe, somente este serviço)
   ansible.windows.win_powershell:
     error_action: stop
@@ -20,14 +27,17 @@
     script: |
       param([string] $ServiceName)
 
+      # Proteção extra dentro do script: nunca mexe em serviço com outro nome.
       if ($ServiceName -ne 'CarmelMonitorAgent') { throw "Serviço inesperado: $ServiceName" }
       $Ansible.Changed = $false
       $svc = Get-CimInstance Win32_Service -Filter "Name='$ServiceName'"
+      # Serviço não existe: nada a fazer.
       if (-not $svc) { return }
       if ($svc.PathName -notlike '*Carmel Monitor*') {
           throw "Serviço aponta para outro caminho, nada foi removido: $($svc.PathName)"
       }
 
+      # Para o serviço antes de excluir e espera até 30s; sem isso a exclusão ficaria pendente.
       if ($svc.State -ne 'Stopped') {
           & sc.exe stop $ServiceName | Out-Null
           $deadline = (Get-Date).AddSeconds(30)
@@ -39,6 +49,7 @@
           if ($state -ne 'Stopped') { throw "O serviço não parou em 30s (estado: $state)" }
       }
 
+      # Exclui o serviço e espera até 20s o Windows liberar o nome (o nome ainda pode ficar reservado por instantes).
       & sc.exe delete $ServiceName | Out-Null
       $deadline = (Get-Date).AddSeconds(20)
       while ((Get-CimInstance Win32_Service -Filter "Name='$ServiceName'") -and (Get-Date) -lt $deadline) {
@@ -47,6 +58,8 @@
       $Ansible.Changed = $true
   when: monitor_agent_service_before_removal.exists
 
+# Apaga a pasta do agente (executáveis e config.json com o token).
+# Repete até 5 vezes, a cada 3s, pois o Windows pode demorar a liberar o .exe de um serviço recém-parado.
 - name: Remover arquivos do agente
   ansible.windows.win_file:
     path: '{{ monitor_agent_install_dir }}'
@@ -56,6 +69,7 @@
   delay: 3
   until: monitor_agent_remove_files is succeeded
 
+# Verificação final: confirma que o serviço e a pasta realmente sumiram.
 - name: Consultar estado final do serviço
   ansible.windows.win_service_info:
     name: '{{ monitor_agent_service_name }}'

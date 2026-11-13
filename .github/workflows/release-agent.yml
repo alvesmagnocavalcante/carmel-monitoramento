@@ -1,32 +1,44 @@
+# Workflow do GitHub Actions: publica uma nova versão do agente Windows.
+# Dispara ao enviar uma tag agent-vX.Y.Z; testa, compila, gera o SHA-256 e cria a Release,
+# de onde o Ansible/Semaphore baixa o executável.
 name: Publicar agente Windows
 
+# Gatilho: somente tags no padrão agent-vX.Y.Z (ex.: git tag agent-v1.2.3 && git push --tags).
 on:
   push:
     tags:
       - agent-v*.*.*
 
+# Permissão mínima necessária: escrever em "contents" para criar a Release.
 permissions:
   contents: write
 
 jobs:
   release:
+    # Compila em Linux mesmo para Windows (compilação cruzada, mais rápida e barata).
     runs-on: ubuntu-latest
+    # Os comandos run abaixo executam dentro da pasta do código Go do agente.
     defaults:
       run:
         working-directory: monitor/agent
     steps:
+      # Baixa o código na tag enviada.
       - name: Baixar código
         uses: actions/checkout@v4
 
+      # Instala a versão do Go exigida pelo go.mod e usa go.sum como chave de cache.
       - name: Configurar Go
         uses: actions/setup-go@v5
         with:
           go-version-file: monitor/agent/go.mod
           cache-dependency-path: monitor/agent/go.sum
 
+      # Roda os testes; se algum falhar, o workflow para e nenhuma Release é publicada.
       - name: Executar testes
         run: go test ./...
 
+      # Gera o .exe para Windows 64 bits. CGO desligado produz binário estático, sem depender de DLLs.
+      # -trimpath e -s -w removem caminhos locais e símbolos de depuração, deixando o arquivo menor.
       - name: Compilar agente Windows
         env:
           GOOS: windows
@@ -34,10 +46,13 @@ jobs:
           CGO_ENABLED: '0'
         run: go build -trimpath -ldflags='-s -w' -o dist/monitor-agent.exe .
 
+      # Gera o arquivo .sha256, que o Ansible usa para conferir a integridade do .exe baixado.
       - name: Gerar checksum SHA-256
         working-directory: monitor/agent/dist
         run: sha256sum monitor-agent.exe > monitor-agent.exe.sha256
 
+      # Cria a Release com o .exe e o .sha256 anexados. --verify-tag exige que a tag já exista no GitHub;
+      # o título usa o número da versão sem o prefixo agent-v; as notas são geradas pelos commits.
       - name: Criar GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}

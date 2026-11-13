@@ -10,6 +10,7 @@ import (
 	"time"
 )
 
+// Com a fila cheia, um novo item descarta o mais antigo e a ordem dos restantes se mantém.
 func TestHeartbeatQueueDropsOldestAtLimit(t *testing.T) {
 	queue := newHeartbeatQueue(2)
 	queue.Push(Heartbeat{AgentID: "first"})
@@ -25,6 +26,7 @@ func TestHeartbeatQueueDropsOldestAtLimit(t *testing.T) {
 	}
 }
 
+// Um item devolvido ao início da fila sai primeiro; se a fila está cheia, o mais novo é descartado.
 func TestHeartbeatQueueReturnsFailedItemToFront(t *testing.T) {
 	queue := newHeartbeatQueue(2)
 	queue.Push(Heartbeat{AgentID: "second"})
@@ -40,6 +42,8 @@ func TestHeartbeatQueueReturnsFailedItemToFront(t *testing.T) {
 	}
 }
 
+// Simula uma API que falha (503) na primeira chamada e funciona na segunda: o envio deve
+// tentar de novo e esvaziar a fila.
 func TestRunSenderRetriesFailedHeartbeat(t *testing.T) {
 	var requests atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
@@ -62,6 +66,7 @@ func TestRunSenderRetriesFailedHeartbeat(t *testing.T) {
 		close(done)
 	}()
 
+	// Aguarda até 3 s, verificando a cada 10 ms; passado esse prazo, o teste falha.
 	deadline := time.After(3 * time.Second)
 	for requests.Load() < 2 || queue.Len() != 0 {
 		select {
@@ -75,6 +80,8 @@ func TestRunSenderRetriesFailedHeartbeat(t *testing.T) {
 	<-done
 }
 
+// Simula uma API que recusa um item com 422: ele deve ser descartado sem repetir, e o item
+// seguinte precisa ser enviado (a fila não pode travar).
 func TestRunSenderDiscardsRejectedHeartbeatAndContinues(t *testing.T) {
 	var sent atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {

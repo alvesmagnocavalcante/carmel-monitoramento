@@ -9,6 +9,7 @@ import (
 	"testing"
 )
 
+// Garante que o ID do agente é repetível para o mesmo grupo e PC, e muda se o grupo mudar.
 func TestStableAgentIDUsesGroupAndHostname(t *testing.T) {
 	first := stableAgentID("Hotel Carmel", "RECEPCAO-01")
 	second := stableAgentID("Hotel Carmel", "RECEPCAO-01")
@@ -22,6 +23,7 @@ func TestStableAgentIDUsesGroupAndHostname(t *testing.T) {
 	}
 }
 
+// Simula o técnico digitando o grupo no console e confere o texto lido.
 func TestPromptGroup(t *testing.T) {
 	group, err := promptGroup(strings.NewReader("Hotel Carmel\n"), io.Discard)
 	if err != nil {
@@ -32,6 +34,8 @@ func TestPromptGroup(t *testing.T) {
 	}
 }
 
+// Confere que o grupo passado por --group é usado e gravado no config.json.
+// Usa uma pasta temporária para não mexer em nenhum arquivo real.
 func TestLoadConfigPersistsGroupOverride(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.json")
 	initial := Config{
@@ -69,6 +73,8 @@ func TestLoadConfigPersistsGroupOverride(t *testing.T) {
 	}
 }
 
+// Confere que URL e token vazios no arquivo são preenchidos com os padrões embutidos
+// no executável, e que o resultado é gravado de volta no config.json.
 func TestLoadConfigFillsEmbeddedDefaults(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.json")
 	data := []byte(`{"api_url":"","group":"Taiba","token":"","interval_seconds":10}`)

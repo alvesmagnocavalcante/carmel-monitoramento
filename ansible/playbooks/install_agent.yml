@@ -1,8 +1,16 @@
 ---
+# Playbook de instalação e atualização do agente de monitoramento nos PCs/PDVs Windows.
+# Rodar de novo com outra tag (monitor_agent_release_tag) atualiza o agente; com a mesma tag nada muda.
+# Toda a lógica está no role monitor_agent (ansible/roles/monitor_agent/tasks/main.yml).
 - name: Instalar e atualizar o agente Carmel
+  # Grupo do inventário que contém os equipamentos Windows (definido no inventário do Semaphore).
   hosts: windows
+  # Não coleta fatos (setup) do Windows: poupa tempo e nenhum fato é usado nas tarefas.
   gather_facts: false
+  # Executa em lotes: por padrão 20% dos equipamentos por vez (pode ser trocado por rollout_batch).
+  # Assim, uma versão com defeito é detectada nos primeiros equipamentos, sem derrubar todos.
   serial: "{{ rollout_batch | default('20%') }}"
+  # Se qualquer equipamento falhar, o restante é interrompido (0% de falhas toleradas).
   max_fail_percentage: 0
   roles:
     - role: monitor_agent

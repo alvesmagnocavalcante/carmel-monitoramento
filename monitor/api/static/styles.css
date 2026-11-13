@@ -1,37 +1,55 @@
 /* Identidade visual Carmel Hotéis: areia e café como base, terracota como acento.
    Tema claro (areia) e escuro (café), escolhido por data-theme no <html>. */
+
+/* ---------- Variáveis do tema claro (padrão) ----------
+   Todas as cores e medidas ficam aqui. O resto do arquivo só usa var(--nome), então trocar
+   de tema é só trocar o valor das variáveis. */
 :root {
+  /* Fundos: página (--bg), cartões e painéis (--card), campos de formulário (--field). */
   --bg: #e8e7e1;
   --card: #f4f2ed;
   --field: #e8e7e1;
+  /* Linhas: divisórias e bordas suaves (--line) e bordas de controles clicáveis, mais fortes (--control-line). */
   --line: #dbd4ca;
   --control-line: #9f9385;
+  /* Textos, do mais forte ao mais discreto: títulos/valores (--ink), corpo (--ink-soft), apoio (--muted).
+     --accent-text é o terracota para texto (mais escuro que --accent, para ter contraste suficiente). */
   --ink: #4c3427;
   --ink-soft: #5a4638;
   --muted: #6b5a4d;
   --accent: #b14d1d;
   --accent-text: #9a3f15;
+  /* Estados: verde-azulado para online, terracota para offline/alerta. */
   --online: #1f6864;
   --offline: #9a3f15;
+  /* Linha selecionada e passagem do mouse (translúcidos, para funcionar sobre qualquer fundo). */
   --selected: rgba(231, 208, 167, 0.5);
   --hover: rgba(76, 52, 39, 0.05);
+  /* Botão principal, texto sobre ele e fundo escurecido atrás do diálogo. */
   --primary: #b14d1d;
   --primary-hover: #9a3f15;
   --on-primary: #f4f2ed;
   --overlay: rgba(76, 52, 39, 0.55);
+  /* Cores de cada série dos gráficos (o app.js lê estas variáveis para pintar o Chart.js). */
   --chart-cpu: #b14d1d;
   --chart-memory: #1f6864;
   --chart-disk: #ae894c;
   --chart-net-in: #36908e;
   --chart-net-out: #6d3914;
+  /* Arredondamento dos cantos: cartões (--radius) e itens internos menores (--radius-sm). */
   --radius: 14px;
   --radius-sm: 10px;
+  /* Fontes: Plus Jakarta Sans no texto e Cormorant (serifada) nos números grandes e títulos de destaque. */
   --sans: "Plus Jakarta Sans", Arial, sans-serif;
   --serif: Cormorant, Georgia, serif;
+  /* Avisa o navegador do tema, para que barras de rolagem e campos nativos acompanhem. */
   color-scheme: light;
   font-family: var(--sans);
 }
 
+/* ---------- Tema escuro (café) ----------
+   Mesmas variáveis com novos valores; vale quando o <html> tem data-theme="dark" (definido no topo
+   do index.html e por setTheme no app.js). Aqui o acento vira areia clara, que contrasta com o fundo escuro. */
 :root[data-theme="dark"] {
   --bg: #2e2019;
   --card: #3b2b21;
@@ -59,6 +77,8 @@
   color-scheme: dark;
 }
 
+/* ---------- Base e tipografia ---------- */
+/* border-box: largura e altura já incluem borda e espaçamento interno, o que simplifica as medidas. */
 * { box-sizing: border-box; }
 
 body {
@@ -71,6 +91,7 @@ body {
   line-height: 1.45;
 }
 
+/* Botões e campos herdam a fonte da página (por padrão o navegador usa a dele). */
 button, select, input { font: inherit; }
 h1, h2, p { margin: 0; }
 h1, h2 { color: var(--ink); font-weight: 300; text-transform: uppercase; }
@@ -86,29 +107,37 @@ h2 { font-size: 19px; letter-spacing: 3px; line-height: 1.2; }
   text-transform: uppercase;
 }
 
+/* Texto só para leitores de tela: fica invisível, mas continua acessível (rótulos de campos sem texto visível). */
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 
+/* Contorno visível ao navegar pelo teclado (Tab), só quando necessário. */
 :is(select, input, button):focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
-/* Troca de tema suave: a classe só existe durante a troca (ver setTheme em app.js). */
+/* Troca de tema suave: a classe só existe durante a troca (ver setTheme em app.js).
+   O !important é necessário porque as regras de cada componente já definem suas próprias transições;
+   como a classe é removida logo depois, não atrapalha o uso normal. */
 @keyframes fade-in { from { opacity: 0; } }
 html.theme-fading, html.theme-fading *, html.theme-fading *::before, html.theme-fading *::after {
   transition: background-color 350ms ease, color 350ms ease, border-color 350ms ease,
     fill 350ms ease, stroke 350ms ease, box-shadow 350ms ease !important;
 }
+/* O logo troca entre duas imagens (claro/escuro), então aparece com fade em vez de transição de cor. */
 html.theme-fading .logo { animation: fade-in 350ms ease; }
 
 /* ---------- Estrutura ---------- */
+/* Coluna central com largura máxima de 1600px, para não esticar demais em monitores grandes. */
 .app { width: min(1600px, 100%); margin: 0 auto; padding: 0 48px 40px; }
 
 .topbar { min-height: 88px; display: flex; align-items: center; justify-content: space-between; gap: 24px; }
 .brand { display: flex; align-items: center; gap: 22px; }
+/* Duas versões do logo no HTML; o tema decide qual aparece (a negativa, clara, só no tema escuro). */
 .logo { display: block; width: 116px; height: 40px; object-fit: contain; }
 .logo-dark { display: none; }
 :root[data-theme="dark"] .logo-light { display: none; }
 :root[data-theme="dark"] .logo-dark { display: block; }
 .brand-divider { width: 1px; height: 34px; background: var(--line); }
 
+/* Botão redondo de tema: mostra a lua no tema claro e o sol no escuro (indica para onde vai trocar). */
 .theme-toggle {
   display: grid;
   place-items: center;
@@ -125,11 +154,14 @@ html.theme-fading .logo { animation: fade-in 350ms ease; }
 :root[data-theme="dark"] .theme-toggle .icon-sun { display: block; }
 :root[data-theme="dark"] .theme-toggle .icon-moon { display: none; }
 
+/* Layout em grade: uma coluna; com o histórico aberto (.has-details) ganha uma segunda coluna lateral.
+   minmax(0, 1fr) deixa a coluna encolher, evitando que a tabela estoure a largura. */
 .layout { display: grid; grid-template-columns: minmax(0, 1fr); gap: 24px; align-items: start; }
 .layout.has-details { grid-template-columns: minmax(0, 1fr) minmax(400px, 32%); }
 .primary { min-width: 0; }
 
 /* ---------- Resumo ---------- */
+/* Três cartões de números grandes (máquinas, online, offline), lado a lado. */
 .stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; margin-bottom: 24px; }
 .stat {
   display: grid;
@@ -148,12 +180,14 @@ html.theme-fading .logo { animation: fade-in 350ms ease; }
 .stat-offline strong { color: var(--offline); }
 
 /* ---------- Painel de hosts ---------- */
+/* Cartão que contém título, filtros, tabela e paginação. */
 .panel { padding: 28px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--card); }
 .panel-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; margin-bottom: 20px; }
 .panel-controls { display: flex; align-items: center; gap: 14px; }
 .updated-at { color: var(--muted); font-size: 12px; }
 .updated-at.error { color: var(--offline); font-weight: 600; }
 
+/* Campos em formato de pílula (seletor, busca e campos do diálogo) com o mesmo visual. */
 .select-field select, .search-field input, .edit-dialog input {
   color: var(--ink);
   border: 1px solid var(--line);
@@ -163,6 +197,7 @@ html.theme-fading .logo { animation: fade-in 350ms ease; }
 .select-field select { min-width: 150px; height: 38px; padding: 0 34px 0 16px; }
 .select-field select:hover, .search-field input:hover { border-color: var(--control-line); }
 
+/* Barra de busca e filtros de status (chips). A lupa fica posicionada sobre o campo, à esquerda. */
 .toolbar { display: flex; align-items: center; gap: 12px; margin-bottom: 18px; }
 .search-field { position: relative; flex: 1; display: block; color: var(--muted); }
 .search-field svg { position: absolute; top: 50%; left: 15px; transform: translateY(-50%); pointer-events: none; }
@@ -175,6 +210,7 @@ html.theme-fading .logo { animation: fade-in 350ms ease; }
 .chip.active { color: var(--on-primary); background: var(--primary); }
 
 /* ---------- Tabela (desktop) ---------- */
+/* table-layout: fixed faz as colunas obedecerem as larguras definidas abaixo, em vez de se ajustarem ao conteúdo. */
 .host-table-wrap { overflow-x: auto; }
 .host-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
 .host-table th {
@@ -189,7 +225,8 @@ html.theme-fading .logo { animation: fade-in 350ms ease; }
   border-bottom: 1px solid var(--line);
 }
 .host-table td { padding: 14px; text-align: left; border-bottom: 1px solid var(--line); vertical-align: middle; }
-/* Larguras proporcionais: as colunas dividem a tabela de forma equilibrada em qualquer tela. */
+/* Larguras proporcionais: as colunas dividem a tabela de forma equilibrada em qualquer tela.
+   max(10%, 136px) = porcentagem, mas nunca menos que o mínimo em pixels para o conteúdo caber. */
 .host-table .col-host { width: 21%; }
 .host-table .col-status { width: max(10%, 136px); }
 .host-table .col-metric { width: 12%; }
@@ -201,19 +238,23 @@ html.theme-fading .logo { animation: fade-in 350ms ease; }
 .host-table tbody tr.selected { background: var(--selected); }
 .host-table tbody tr:last-child td { border-bottom: 0; }
 
-/* Alerta (offline, disco cheio, memória alta): pulso suave no card do host. */
+/* Alerta (offline, disco cheio, memória alta): pulso suave no card do host.
+   --alert-base é a cor de fundo "normal" da linha, para o pulso se misturar a ela (no celular muda, ver abaixo). */
 .host-table tbody tr { --alert-base: transparent; }
 @keyframes alert-pulse {
   0%, 100% { background-color: color-mix(in srgb, var(--offline) 3%, var(--alert-base)); }
   50% { background-color: color-mix(in srgb, var(--offline) 20%, var(--alert-base)); }
 }
 .host-table tbody tr.alert { animation: alert-pulse 2s ease-in-out infinite; }
+/* Linha selecionada não pulsa, para o destaque da seleção continuar estável. */
 .host-table tbody tr.alert.selected { animation: none; }
+/* Acessibilidade: quem pediu menos movimento no sistema recebe um tom fixo em vez do pulso. */
 @media (prefers-reduced-motion: reduce) {
   .host-table tbody tr.alert { animation: none; background-color: color-mix(in srgb, var(--offline) 12%, var(--alert-base)); }
   .tv-tile.alert { animation: none; }
 }
 
+/* Linha de título de grupo dentro da tabela: sem fundo e sem cursor de clique (não é um host). */
 .host-table tbody .group-header,
 .host-table tbody .group-header:hover { background: transparent; cursor: default; }
 .host-table tbody .group-header td { padding: 22px 14px 8px; border-bottom: 0; }
@@ -222,6 +263,7 @@ html.theme-fading .logo { animation: fade-in 350ms ease; }
 .group-header-content span { padding: 1px 9px; color: var(--muted); font-size: 11px; font-weight: 600; border: 1px solid var(--line); border-radius: 999px; }
 .host-table tbody .group-header:first-child td { padding-top: 8px; }
 
+/* Nome do host (botão invisível, ocupa a célula toda) e métricas com barrinha de uso. */
 .host-name-button { display: block; width: 100%; padding: 0; color: var(--ink); text-align: left; border: 0; background: transparent; cursor: pointer; }
 .host-name-button strong { display: block; font-size: 14px; font-weight: 600; overflow-wrap: anywhere; }
 .host-name-button span { display: block; margin-top: 2px; color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
@@ -230,28 +272,34 @@ html.theme-fading .logo { animation: fade-in 350ms ease; }
 .metric-value { color: var(--ink); font-family: var(--serif); font-size: 22px; font-weight: 600; line-height: 1; font-variant-numeric: lining-nums tabular-nums; }
 .meter { height: 4px; overflow: hidden; border-radius: 999px; background: var(--line); }
 .meter span { display: block; height: 100%; border-radius: inherit; background: var(--ink-soft); }
+/* A barra fica na cor de alerta quando o uso é alto (classe "high", definida pelo app.js). */
 .meter.high span { background: var(--offline); }
 
+/* Rede: linhas de download (↓) e upload (↑), com cores iguais às das séries do gráfico. */
 .net { display: grid; gap: 3px; color: var(--ink); font-size: 13px; font-weight: 500; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .net-line b { display: inline-block; width: 14px; font-weight: 700; }
 .net-in { color: var(--chart-net-in); }
 .net-out { color: var(--chart-net-out); }
+/* No tema escuro o marrom do upload quase some no fundo; usa o tom areia. */
 :root[data-theme="dark"] .net-out { color: var(--chart-disk); }
 .status-stack { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; }
 .last-contact { color: var(--muted); white-space: nowrap; }
 .uptime { color: var(--ink-soft); font-size: 13px; font-weight: 500; font-variant-numeric: tabular-nums; white-space: nowrap; }
+/* Botões pequenos de ação (Editar/Excluir host); "danger" fica vermelho-terracota ao passar o mouse. */
 .icon-button { padding: 6px 12px; color: var(--ink-soft); font-size: 12px; font-weight: 600; border: 1px solid var(--line); border-radius: 999px; background: transparent; cursor: pointer; }
 .icon-button:hover { color: var(--ink); border-color: var(--control-line); }
 .host-actions { display: flex; gap: 8px; margin-top: 14px; }
 .host-actions .icon-button { flex: 1; padding: 9px 12px; font-size: 13px; }
 .icon-button.danger:hover { color: var(--offline); border-color: var(--offline); }
 
+/* Selo de status (Online/Offline/aviso): fundo é a própria cor a 14%, com uma bolinha na frente. */
 .badge { white-space: nowrap; display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; font-size: 11px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase; border-radius: 999px; }
 .badge::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
 .badge.online { color: var(--online); background: color-mix(in srgb, var(--online) 14%, transparent); }
 .badge.warn { padding: 3px 9px; color: var(--accent-text); border: 1px solid currentColor; font-size: 10px; letter-spacing: 1px; }
 .badge.offline { color: var(--offline); background: color-mix(in srgb, var(--offline) 14%, transparent); }
 
+/* Botões de ordenação do cabeçalho: setinha ↕ neutra; a coluna ativa mostra ↑ (crescente) ou ↓ (decrescente). */
 .sort-button { position: relative; padding: 0 14px 0 0; color: inherit; font: inherit; letter-spacing: inherit; text-transform: inherit; border: 0; background: transparent; cursor: pointer; }
 .sort-button::after { content: "↕"; position: absolute; right: 0; opacity: 0.5; }
 .sort-button.active { color: var(--ink); }
@@ -259,7 +307,8 @@ html.theme-fading .logo { animation: fade-in 350ms ease; }
 .sort-button.active.desc::after { content: "↓"; }
 
 /* Com o histórico aberto a tabela cede espaço: a coluna menos importante fica com largura zero
-   (e não display:none, para o colspan dos grupos continuar valendo). */
+   (e não display:none, para o colspan dos grupos continuar valendo). Só em telas largas;
+   abaixo de 1100px o histórico vira folha por cima e a tabela mantém todas as colunas. */
 @media (min-width: 1101px) {
   .layout.has-details .host-table .col-last,
   .layout.has-details .host-table .col-uptime,
@@ -274,6 +323,7 @@ html.theme-fading .logo { animation: fade-in 350ms ease; }
   .layout.has-details .host-table td { padding-inline: 8px; }
 }
 
+/* Paginação (Anterior/Próxima) e mensagem de lista vazia. */
 .pagination { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-top: 16px; color: var(--muted); font-size: 12px; }
 .pagination div { display: flex; align-items: center; gap: 12px; }
 .pagination button { padding: 7px 14px; color: var(--ink); font-weight: 600; border: 1px solid var(--line); border-radius: 999px; background: transparent; cursor: pointer; }
@@ -285,6 +335,7 @@ html.theme-fading .logo { animation: fade-in 350ms ease; }
 .empty-state strong { margin-bottom: 6px; color: var(--ink); }
 
 /* ---------- Histórico (painel lateral) ---------- */
+/* sticky: o painel acompanha a rolagem da página; max-height + overflow-y deixam rolar só dentro dele. */
 .details {
   position: sticky;
   top: 16px;
@@ -295,14 +346,17 @@ html.theme-fading .logo { animation: fade-in 350ms ease; }
   border-radius: var(--radius);
   background: var(--card);
 }
+/* Garante que o atributo hidden esconda o painel, já que acima ele recebe sua própria regra de display. */
 .details[hidden] { display: none; }
-/* Entra deslizando e sai da mesma forma (a classe closing vem de setDetailsOpen em app.js). */
+/* Entra deslizando e sai da mesma forma (a classe closing vem de setDetailsOpen em app.js).
+   details-* é o deslize lateral (desktop); sheet-* sobe de baixo (folha no celular). */
 @keyframes details-in { from { opacity: 0; transform: translateX(28px); } }
 @keyframes details-out { to { opacity: 0; transform: translateX(28px); } }
 @keyframes sheet-in { from { opacity: 0; transform: translateY(32px); } }
 @keyframes sheet-out { to { opacity: 0; transform: translateY(32px); } }
 .details { animation: details-in 260ms cubic-bezier(0.2, 0.7, 0.2, 1); }
 .details.closing { animation: details-out 180ms ease forwards; }
+/* Cabeçalho do painel, botão de fechar e seletor de período. */
 .details-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
 .details-host { margin-top: 6px; color: var(--muted); font-size: 12px; }
 .close-button { display: grid; place-items: center; flex: none; width: 36px; height: 36px; color: var(--ink-soft); border: 1px solid var(--line); border-radius: 999px; background: transparent; cursor: pointer; }
@@ -311,6 +365,7 @@ html.theme-fading .logo { animation: fade-in 350ms ease; }
 .field-label { display: block; margin-bottom: 6px; color: var(--muted); font-size: 11px; font-weight: 600; letter-spacing: 2px; text-transform: uppercase; }
 .period-field select { width: 100%; }
 
+/* Ficha do host: grade de 2 colunas de "fatos" (rótulo + valor); .wide ocupa a linha inteira. Inclui lista de discos. */
 .host-card { margin-bottom: 16px; }
 .fact-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 12px; }
 .fact { display: grid; align-content: start; gap: 4px; min-width: 0; padding: 12px 14px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--field); }
@@ -324,6 +379,7 @@ html.theme-fading .logo { animation: fade-in 350ms ease; }
 .volume-head { display: flex; justify-content: space-between; gap: 12px; color: var(--ink); font-size: 13px; }
 .volume-head span:last-child { color: var(--muted); font-variant-numeric: tabular-nums; }
 .hint { margin-top: 12px; color: var(--muted); font-size: 12px; }
+/* Cartões dos gráficos; a bolinha colorida de cada título repete a cor da série. */
 .chart-stack { display: grid; gap: 12px; }
 .chart-card { min-width: 0; padding: 14px 16px 10px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--field); }
 .chart-title { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; color: var(--ink); font-size: 11px; font-weight: 600; letter-spacing: 2px; text-transform: uppercase; }
@@ -333,8 +389,10 @@ html.theme-fading .logo { animation: fade-in 350ms ease; }
 .metric-dot.memory { background: var(--chart-memory); }
 .metric-dot.disk { background: var(--chart-disk); }
 .metric-dot.network { background: var(--chart-net-in); }
+/* Altura fixa e position: relative, exigidos pelo Chart.js para dimensionar o gráfico dentro da caixa. */
 .chart-wrap { position: relative; height: 170px; }
-/* Enquanto o histórico não chega, os gráficos mostram um brilho passando. */
+/* Enquanto o histórico não chega, os gráficos mostram um brilho passando (shimmer): um degradê
+   com o dobro da largura que desliza da direita para a esquerda; pointer-events: none não atrapalha o mouse. */
 @keyframes shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
 .details.loading .chart-wrap::after {
   content: "";
@@ -347,6 +405,7 @@ html.theme-fading .logo { animation: fade-in 350ms ease; }
 }
 
 /* ---------- Diálogo e botões ---------- */
+/* Janela de edição do host (elemento <dialog> nativo); ::backdrop é o fundo escurecido atrás dela. */
 .edit-dialog { width: min(460px, calc(100% - 32px)); padding: 0; color: var(--ink-soft); border: 1px solid var(--line); border-radius: var(--radius); background: var(--card); }
 .edit-dialog::backdrop { background: var(--overlay); }
 .edit-dialog form { display: grid; gap: 20px; padding: 24px; }
@@ -359,14 +418,17 @@ html.theme-fading .logo { animation: fade-in 350ms ease; }
 .primary-button:hover { border-color: var(--primary-hover); background: var(--primary-hover); }
 .secondary-button { color: var(--ink); border: 1px solid var(--control-line); background: transparent; }
 
+/* Rodapé da página. */
 .page-footer { display: flex; justify-content: space-between; gap: 16px; margin-top: 32px; padding-top: 16px; color: var(--muted); font-size: 12px; border-top: 1px solid var(--line); }
 
 /* ---------- Tablet e celular ---------- */
+/* Até 1100px: margens menores e o histórico deixa de ser coluna lateral para virar folha. */
 @media (max-width: 1100px) {
   .app { padding: 0 24px 32px; }
   .layout.has-details { grid-template-columns: minmax(0, 1fr); }
 
-  /* O histórico vira uma folha em tela cheia. */
+  /* O histórico vira uma folha em tela cheia (position: fixed sobre tudo). O cabeçalho fica grudado no
+     topo ao rolar; body.sheet-open trava a rolagem da página de trás. */
   .details { position: fixed; inset: 0; z-index: 20; max-height: none; padding: 20px 20px 32px; border: 0; border-radius: 0; animation-name: sheet-in; }
   .details.closing { animation-name: sheet-out; }
   .details-head { position: sticky; top: -20px; z-index: 1; margin: -20px -20px 16px; padding: 20px; background: var(--card); border-bottom: 1px solid var(--line); }
@@ -374,6 +436,7 @@ html.theme-fading .logo { animation: fade-in 350ms ease; }
   body.sheet-open { overflow: hidden; }
 }
 
+/* Até 760px (celular): tudo em coluna única, fontes e espaçamentos menores. */
 @media (max-width: 760px) {
   .brand-title .eyebrow { display: none; }
   .app { padding: 0 16px 28px; }
@@ -398,7 +461,8 @@ html.theme-fading .logo { animation: fade-in 350ms ease; }
   .chips { justify-content: stretch; }
   .chip { flex: 1; }
 
-  /* Cada host vira um card organizado em áreas. */
+  /* Cada host vira um card organizado em áreas. O cabeçalho da tabela some e cada célula mostra seu
+     próprio rótulo (data-label, via ::before). grid-template-areas desenha o card: nome/status, CPU/mem/disco, etc. */
   .host-table-wrap { overflow: visible; }
   .host-table, .host-table tbody { display: block; }
   .host-table thead { display: none; }
@@ -417,6 +481,7 @@ html.theme-fading .logo { animation: fade-in 350ms ease; }
     border: 1px solid var(--line);
     border-radius: var(--radius);
     background: var(--field);
+    /* No celular o card tem fundo próprio (--field); o pulso de alerta precisa partir dessa cor. */
     --alert-base: var(--field);
   }
   .host-table tbody tr.selected { border-color: var(--accent); background: var(--selected); }
@@ -455,18 +520,24 @@ html.theme-fading .logo { animation: fade-in 350ms ease; }
 }
 
 /* ---------- Botão de apresentação e modo apresentação (TV) ---------- */
+/* Botões do topo (Apresentação e tema) e o estilo de botão em pílula usado também nos controles da TV. */
 .topbar-actions { display: flex; align-items: center; gap: 12px; }
 .pill-button { display: inline-flex; align-items: center; gap: 8px; height: 42px; padding: 0 18px; color: var(--ink); font-size: 13px; font-weight: 600; border: 1px solid var(--line); border-radius: 999px; background: var(--card); cursor: pointer; }
 .pill-button:hover { border-color: var(--control-line); }
 .pill-button.active { color: var(--on-primary); border-color: var(--primary); background: var(--primary); }
 
+/* Com o modo TV ativo, o painel normal some e a página não rola. */
 body.tv-active { overflow: hidden; }
 body.tv-active .app { display: none; }
 
+/* Camada de tela cheia (position: fixed, z-index alto) por cima de tudo. Espaçamentos em vh/vw para
+   acompanhar o tamanho da TV. O cursor fica oculto (cursor: none) e volta com a classe .awake (ver tv.js). */
 .tv { position: fixed; inset: 0; z-index: 50; display: grid; grid-template-rows: auto minmax(0, 1fr); gap: 2vh; padding: 2.2vh 2.5vw 2.5vh; background: var(--bg); cursor: none; }
 .tv.awake { cursor: default; }
 .tv[hidden] { display: none; }
 
+/* Cabeçalho da TV: marca, indicadores grandes, relógio e botões. clamp(mín, ideal, máx) faz o tamanho
+   crescer com a largura da tela, sem passar dos limites. */
 .tv-head { display: grid; grid-template-columns: auto 1fr auto auto; align-items: center; gap: 2vw; padding-bottom: 2vh; border-bottom: 1px solid var(--line); }
 .tv-brand { display: flex; align-items: center; gap: 1.4vw; }
 .tv-brand .logo { width: clamp(110px, 9vw, 190px); height: auto; }
@@ -482,10 +553,14 @@ body.tv-active .app { display: none; }
 .tv-meta #tv-clock { color: var(--ink); font-family: var(--serif); font-size: clamp(34px, 3.6vw, 66px); font-weight: 500; line-height: 1; }
 .tv-meta #tv-date { color: var(--ink-soft); font-size: clamp(11px, 0.95vw, 18px); }
 .tv-meta .updated-at { font-size: clamp(10px, 0.8vw, 14px); }
+/* Botões da TV ficam transparentes até haver movimento (.awake), para não poluir a tela na parede. */
 .tv-actions { display: flex; gap: 12px; opacity: 0; transition: opacity 200ms ease; }
 .tv.awake .tv-actions { opacity: 1; }
 
-/* Tudo abaixo é medido em em: o JS escolhe o --tv-font para todos os hosts caberem na tela. */
+/* Tudo abaixo é medido em em: o JS escolhe o --tv-font para todos os hosts caberem na tela.
+   Como 1em = --tv-font, mudar essa variável escala cartões, textos e espaços juntos.
+   --tv-extra é a folga de altura que o JS soma a cada cartão quando sobra espaço. A rolagem existe
+   como reserva, mas a barra é escondida. As medidas (21em, 6.9em, 2.4em, 0.8em) espelham as constantes do tv.js. */
 .tv-body { min-height: 0; overflow-y: auto; font-size: var(--tv-font, 14px); scrollbar-width: none; }
 .tv-body::-webkit-scrollbar { display: none; }
 .tv-group h3 { display: flex; align-items: center; gap: 0.8em; height: 2.4em; margin: 0; color: var(--accent-text); font-size: 0.95em; font-weight: 600; letter-spacing: 0.25em; text-transform: uppercase; }
@@ -493,6 +568,8 @@ body.tv-active .app { display: none; }
 .tv-group h3 span { padding: 0.1em 0.7em; color: var(--muted); font-size: 0.85em; letter-spacing: 0; border: 1px solid var(--line); border-radius: 999px; }
 .tv-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(21em, 1fr)); gap: 0.8em; margin-bottom: 0.8em; }
 
+/* Cartão de cada máquina: três faixas (cabeçalho, barras, rodapé). Borda e fundo mudam conforme o estado:
+   offline (terracota), disco cheio (acento) e alerta (pulso de brilho). */
 .tv-tile { display: grid; grid-template-rows: auto 1fr auto; gap: 0.5em; height: calc(6.9em + var(--tv-extra, 0px)); padding: 0.7em 0.9em; overflow: hidden; border: 1px solid var(--line); border-radius: 0.8em; background: var(--card); }
 .tv-tile.offline { border-color: var(--offline); background: color-mix(in srgb, var(--offline) 11%, var(--card)); }
 .tv-tile.offline .tv-bars { opacity: 0.4; }
@@ -515,6 +592,8 @@ body.tv-active .app { display: none; }
 .tv-foot { display: flex; justify-content: space-between; gap: 0.6em; overflow: hidden; color: var(--muted); font-size: 0.78em; white-space: nowrap; }
 .tv-empty { padding: 6em 0; color: var(--muted); text-align: center; font-size: 1.4em; }
 
+/* Celular não tem o botão de apresentação (a tela é pequena demais); em tablet o cabeçalho da TV reorganiza
+   e os indicadores passam para uma linha própria. */
 @media (max-width: 760px) { #tv-toggle { display: none; } }
 @media (max-width: 1100px) { .tv-head { grid-template-columns: 1fr auto; } .tv-kpis { grid-column: 1 / -1; order: 3; } }
 

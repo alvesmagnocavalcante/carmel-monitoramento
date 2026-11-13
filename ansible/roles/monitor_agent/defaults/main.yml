@@ -1,12 +1,26 @@
 ---
+# Valores padrão do role monitor_agent. Podem ser sobrescritos pelo inventário, pelo Semaphore
+# (variáveis/survey) ou por --extra-vars, que têm prioridade sobre este arquivo.
+#
+# Nome do serviço Windows. As tarefas de instalação e remoção só aceitam este nome (trava de segurança).
 monitor_agent_service_name: CarmelMonitorAgent
+# Pasta onde o executável e o config.json ficam. A desinstalação apaga esta pasta inteira.
 monitor_agent_install_dir: 'C:\Program Files\Carmel Monitor'
+# Caminho do arquivo de configuração lido pelo agente (contém o token).
 monitor_agent_config_path: '{{ monitor_agent_install_dir }}\config.json'
+# Endereço da API que recebe as métricas; vai para o campo api_url do config.json.
 monitor_agent_api_url: https://monitoramento-carmel.fastapicloud.dev
+# Intervalo, em segundos, entre cada envio de métricas. O role exige no mínimo 10.
 monitor_agent_interval_seconds: 60
 
 # As releases são publicadas pelo workflow .github/workflows/release-agent.yml.
+# Repositório do GitHub (proprietário/repositório) de onde o .exe e o .sha256 são baixados.
 monitor_agent_github_repository: alvesmagnocavalcante/carmel-monitoramento
+# Versão a instalar, no formato agent-vX.Y.Z (tag da Release). Vazio de propósito: deve ser informada
+# na execução, para ninguém instalar uma versão por engano.
 monitor_agent_release_tag: ''
+# Token de autenticação do agente na API. Vem da variável de ambiente MONITOR_AGENT_TOKEN, cadastrada
+# como segredo no Semaphore; nunca grave o valor real em arquivos do repositório.
 monitor_agent_token: "{{ lookup('ansible.builtin.env', 'MONITOR_AGENT_TOKEN') }}"
+# Grupo (ex.: hotel/setor) do equipamento. Vazio aqui; cada host deve definir no inventário.
 monitor_agent_group: ''
