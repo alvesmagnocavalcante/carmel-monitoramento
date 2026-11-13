@@ -16,7 +16,7 @@ import (
 
 // agentVersion é a versão do agente enviada à API. Definida no build com:
 // -X main.agentVersion=1.2.0
-var agentVersion = "1.1.2"
+var agentVersion = "1.2.0"
 
 // systemInfoTTL é por quanto tempo os dados fixos do PC ficam em cache (1 hora);
 // maxIPs limita quantos endereços IP vão no heartbeat.

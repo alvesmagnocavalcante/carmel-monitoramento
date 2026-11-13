@@ -23,11 +23,11 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300..700&family=Cormorant:wght@400..700&display=swap">
-  <link rel="stylesheet" href="/static/styles.css?v=20261112-7">
+  <link rel="stylesheet" href="/static/styles.css?v=20261113-1">
   <!-- Scripts com "defer": rodam depois que a página carrega, nesta ordem (gráficos, painel, modo TV). -->
   <script src="/static/chart.umd.min.js" defer></script>
-  <script src="/static/app.js?v=20261112-5" defer></script>
-  <script src="/static/tv.js?v=20261112-1" defer></script>
+  <script src="/static/app.js?v=20261113-1" defer></script>
+  <script src="/static/tv.js?v=20261113-1" defer></script>
 </head>
 <body>
   <!-- Painel normal. É escondido por inteiro quando o modo apresentação está ativo. -->
@@ -151,6 +151,41 @@
             <span>Ajuste os filtros ou execute o monitor-agent.exe em um computador.</span>
           </div>
         </section>
+
+        <!-- Dispositivos sem agente (impressoras, antenas...), pingados por um servidor do local. Fica dentro
+             de .primary, logo abaixo dos hosts, para não ser espremido pelo painel lateral de histórico.
+             As linhas do tbody são criadas pelo app.js; clicar numa linha abre o diálogo de edição. -->
+        <section class="panel device-panel" aria-labelledby="devices-title">
+          <div class="panel-head">
+            <div>
+              <p class="eyebrow">Dispositivos</p>
+              <h2 id="devices-title">Impressoras e antenas</h2>
+            </div>
+            <div class="panel-controls device-controls">
+              <span class="device-summary" id="device-summary"></span>
+              <button type="button" class="primary-button device-add" id="add-device">Adicionar dispositivo</button>
+            </div>
+          </div>
+
+          <div class="host-table-wrap" id="device-table-wrap">
+            <table class="host-table device-table">
+              <thead>
+                <tr>
+                  <th class="col-dev">Dispositivo</th>
+                  <th class="col-dstatus">Status</th>
+                  <th class="col-dresp">Resposta</th>
+                  <th class="col-dsince">Desde</th>
+                  <th class="col-dserver">Servidor</th>
+                </tr>
+              </thead>
+              <tbody id="device-table-body"></tbody>
+            </table>
+          </div>
+          <!-- Mensagem exibida quando não há dispositivos cadastrados. -->
+          <div class="empty-state device-empty" id="device-empty" hidden>
+            <strong>Nenhum dispositivo cadastrado.</strong>
+          </div>
+        </section>
       </div>
 
       <!-- Painel lateral de histórico: abre ao clicar em um host. Mostra informações da máquina, o seletor
@@ -220,7 +255,7 @@
   <!-- Modo apresentação (TV): tela cheia somente leitura, escondida até o botão "Apresentação" ou ?tv=1.
        O tv.js preenche os números e monta os cartões dentro de #tv-body. -->
   <section class="tv" id="tv" aria-label="Modo apresentação" hidden>
-    <!-- Cabeçalho da TV: marca, indicadores (máquinas, online, offline, disco cheio), relógio e botões
+    <!-- Cabeçalho da TV: marca, indicadores (máquinas, online, offline, disco cheio e dispositivos fora do ar), relógio e botões
          (que somem sozinhos quando ninguém mexe no mouse). -->
     <header class="tv-head" id="tv-head">
       <div class="tv-brand">
@@ -237,6 +272,8 @@
         <div class="tv-kpi tv-kpi-online"><span>Online</span><strong id="tv-online">0</strong></div>
         <div class="tv-kpi tv-kpi-offline"><span>Offline</span><strong id="tv-offline">0</strong></div>
         <div class="tv-kpi tv-kpi-warn"><span>Disco cheio</span><strong id="tv-disk-full">0</strong></div>
+        <!-- Só aparece quando há dispositivos cadastrados (tv.js); fica na cor de alerta se algum estiver fora do ar. -->
+        <div class="tv-kpi tv-kpi-devices" id="tv-devices-kpi" hidden><span>Dispositivos fora do ar</span><strong id="tv-devices-down">0</strong></div>
       </div>
       <div class="tv-meta">
         <strong id="tv-clock">--:--</strong>
@@ -279,6 +316,65 @@
       <div class="dialog-actions">
         <button type="button" class="secondary-button" id="cancel-edit-dialog">Cancelar</button>
         <button type="submit" class="primary-button">Salvar alterações</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Diálogo de dispositivo: cadastra (Adicionar dispositivo) ou edita (clique na linha) uma impressora, antena etc.
+       Reaproveita o estilo do diálogo de host. O botão Excluir e o campo Porta são mostrados pelo app.js só quando cabem. -->
+  <dialog class="edit-dialog device-dialog" id="device-dialog">
+    <form id="device-form">
+      <div class="dialog-heading">
+        <div>
+          <p class="eyebrow">Gerenciar dispositivo</p>
+          <h2 id="device-dialog-title">Adicionar dispositivo</h2>
+        </div>
+        <button type="button" class="close-button" id="close-device-dialog" aria-label="Fechar">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg>
+        </button>
+      </div>
+      <label>
+        <span>Nome</span>
+        <input id="device-name" type="text" required maxlength="255">
+      </label>
+      <label>
+        <span>Tipo</span>
+        <select id="device-kind">
+          <option value="impressora">Impressora</option>
+          <option value="antena">Antena</option>
+          <option value="outro">Outro</option>
+        </select>
+      </label>
+      <label>
+        <span>Endereço (IP ou nome)</span>
+        <input id="device-address" type="text" required maxlength="255" autocomplete="off">
+      </label>
+      <label>
+        <span>Grupo</span>
+        <input id="device-group" type="text" required maxlength="100" list="device-group-list" autocomplete="off">
+        <datalist id="device-group-list"></datalist>
+      </label>
+      <label>
+        <span>Servidor que faz o ping</span>
+        <select id="device-probe" required></select>
+      </label>
+      <div class="field-row">
+        <label>
+          <span>Verificação</span>
+          <select id="device-method">
+            <option value="ping">Ping</option>
+            <option value="tcp">Porta TCP</option>
+          </select>
+        </label>
+        <label id="device-port-field" hidden>
+          <span>Porta</span>
+          <input id="device-port" type="number" min="1" max="65535" step="1" inputmode="numeric">
+        </label>
+      </div>
+      <div class="dialog-actions">
+        <button type="button" class="secondary-button danger-button" id="delete-device" hidden>Excluir</button>
+        <button type="button" class="secondary-button" id="cancel-device-dialog">Cancelar</button>
+        <button type="submit" class="primary-button">Salvar</button>
       </div>
     </form>
   </dialog>

@@ -13,6 +13,10 @@
     funções daqui (state, elements, groupAgents, fullVolumes, needsAttention, highMemory,
     formatRate, formatDuration, relativeTime, meterBar, setTheme) e é avisado dos dados novos
     pelo evento "agents-updated", disparado em setUpdated().
+  - Dispositivos sem agente (impressoras, antenas...) são pingados por um servidor do local e
+    listados em /api/devices. Eles têm painel próprio ("Dispositivos"), abaixo da tabela de hosts,
+    e são carregados no mesmo ciclo de refresh(), mas de forma independente: se esse carregamento
+    falhar, a lista de hosts continua funcionando. O tv.js também lê state.devices.
 */
 
 /* ---------- Constantes de configuração ---------- */
@@ -39,6 +43,17 @@ const CHART_ANIMATION_MS = 450;
 const METRICS_CACHE_LIMIT = 24;
 // Bytes em 1 GB (1024 ao cubo), usado para converter tamanhos de memória e disco.
 const BYTES_PER_GB = 1024 ** 3;
+// Nomes amigáveis dos tipos de dispositivo, na forma em que a API os envia.
+const DEVICE_KIND_LABELS = { impressora: "Impressora", antena: "Antena", outro: "Outro" };
+// Texto do selo de cada status de dispositivo ("unknown" = ainda sem leitura recente).
+const DEVICE_STATUS_LABELS = { up: "No ar", down: "Fora do ar", unknown: "Sem leitura" };
+// Ordem na tabela: o que está fora do ar vem primeiro, depois o sem leitura e por fim o que está no ar.
+const DEVICE_STATUS_ORDER = { down: 0, unknown: 1, up: 2 };
+// Nomes dos campos da API exibidos nas mensagens de erro de validação (422).
+const API_FIELD_LABELS = {
+  name: "Nome", kind: "Tipo", address: "Endereço", group: "Grupo",
+  probe_id: "Servidor", method: "Verificação", port: "Porta",
+};
 
 /* ---------- Estado e elementos da tela ---------- */
 
@@ -47,6 +62,8 @@ const BYTES_PER_GB = 1024 ** 3;
 const state = {
   // Lista de hosts devolvida pela API na última atualização.
   agents: [],
+  // Lista de dispositivos (impressoras, antenas...) devolvida por /api/devices; também lida pelo tv.js.
+  devices: [],
   // Id do host aberto no painel lateral (null = painel fechado).
   selectedAgentId: null,
   // Grupo (hotel) escolhido no filtro; "all" = todos.
@@ -110,6 +127,26 @@ const elements = {
   editGroup: document.querySelector("#edit-agent-group"),
   closeEdit: document.querySelector("#close-edit-dialog"),
   cancelEdit: document.querySelector("#cancel-edit-dialog"),
+  deviceBody: document.querySelector("#device-table-body"),
+  deviceTableWrap: document.querySelector("#device-table-wrap"),
+  deviceEmpty: document.querySelector("#device-empty"),
+  deviceSummary: document.querySelector("#device-summary"),
+  addDevice: document.querySelector("#add-device"),
+  deviceDialog: document.querySelector("#device-dialog"),
+  deviceForm: document.querySelector("#device-form"),
+  deviceDialogTitle: document.querySelector("#device-dialog-title"),
+  deviceName: document.querySelector("#device-name"),
+  deviceKind: document.querySelector("#device-kind"),
+  deviceAddress: document.querySelector("#device-address"),
+  deviceGroup: document.querySelector("#device-group"),
+  deviceGroupList: document.querySelector("#device-group-list"),
+  deviceProbe: document.querySelector("#device-probe"),
+  deviceMethod: document.querySelector("#device-method"),
+  devicePortField: document.querySelector("#device-port-field"),
+  devicePort: document.querySelector("#device-port"),
+  deviceDelete: document.querySelector("#delete-device"),
+  deviceClose: document.querySelector("#close-device-dialog"),
+  deviceCancel: document.querySelector("#cancel-device-dialog"),
 };
 
 /* ---------- Formatação ---------- */
@@ -818,6 +855,25 @@ async function selectAgent(agentId) {
 
 /* ---------- Edição e exclusão ---------- */
 
+// Transforma o corpo de erro da API em texto legível. O "detail" pode ser um texto simples ou, nos
+// erros de validação (422), uma lista de objetos {loc, msg}; sem este tratamento a lista apareceria
+// no alerta como "[object Object]". Cada item vira "Campo: mensagem", um por linha.
+function apiErrorMessage(payload, status) {
+  const detail = payload?.detail;
+  if (typeof detail === "string" && detail) return detail;
+  if (Array.isArray(detail) && detail.length) {
+    return detail.map((item) => {
+      if (typeof item === "string") return item;
+      // O último trecho textual de "loc" é o nome do campo (ex.: ["body", "port"]).
+      const field = Array.isArray(item?.loc) ? item.loc.filter((part) => typeof part === "string" && part !== "body").pop() : null;
+      const message = String(item?.msg || "Valor inválido").replace(/^Value error, /, "");
+      const label = API_FIELD_LABELS[field] || field;
+      return label ? `${label}: ${message}` : message;
+    }).join("\n");
+  }
+  return `Falha na operação: ${status}`;
+}
+
 // Faz uma chamada à API que altera dados (editar/excluir), que exige a chave de gestão.
 // A chave é pedida por prompt uma vez e guardada em sessionStorage (some ao fechar a aba).
 // Devolve null se o usuário cancelou ou a chave foi recusada; lança erro nas demais falhas.
@@ -850,7 +906,7 @@ async function managementRequest(url, options) {
   if (!response.ok) {
     // Tenta ler a mensagem de erro da API; se a resposta não for JSON, usa um objeto vazio.
     const payload = await response.json().catch(() => ({}));
-    throw new Error(payload.detail || `Falha na operação: ${response.status}`);
+    throw new Error(apiErrorMessage(payload, response.status));
   }
   return response;
 }
@@ -883,6 +939,201 @@ async function deleteAgent(agent) {
   }
 }
 
+/* ---------- Dispositivos (impressoras, antenas...) ---------- */
+
+// Texto do endereço do dispositivo: no teste por porta TCP mostra "endereço:porta".
+function deviceAddress(device) {
+  return device.method === "tcp" && device.port ? `${device.address}:${device.port}` : device.address;
+}
+
+// "Fora do ar há 2 h" / "No ar há 3 d": há quanto tempo o dispositivo está no estado atual. Usa só a
+// maior unidade (min, h ou d) para ficar curto na tabela; sem leitura ou sem data mostra um traço.
+function deviceSinceText(device) {
+  if (device.status === "unknown" || !device.status_since) return "—";
+  const seconds = Math.max(0, Math.floor((Date.now() - new Date(device.status_since).getTime()) / 1000));
+  const minutes = Math.floor(seconds / 60);
+  const hours = Math.floor(minutes / 60);
+  let amount;
+  if (minutes < 1) amount = "menos de 1 min";
+  else if (hours < 1) amount = `${minutes} min`;
+  else if (hours < 24) amount = `${hours} h`;
+  else amount = `${Math.floor(hours / 24)} d`;
+  return `${device.status === "down" ? "Fora do ar" : "No ar"} há ${amount}`;
+}
+
+// Monta a linha (ou card, no celular) de um dispositivo. Só "down" recebe a classe "alert", que
+// reaproveita o pulso dos hosts em alerta; "unknown" (sem leitura) não pulsa de propósito.
+function deviceRow(device) {
+  const row = document.createElement("tr");
+  if (device.status === "down") row.classList.add("alert");
+
+  // O nome é um botão (como nos hosts) para o teclado também conseguir abrir a edição.
+  const nameButton = document.createElement("button");
+  nameButton.type = "button";
+  nameButton.className = "host-name-button";
+  const name = document.createElement("strong");
+  name.textContent = device.name;
+  const meta = document.createElement("span");
+  meta.textContent = [DEVICE_KIND_LABELS[device.kind] || device.kind, device.group, deviceAddress(device)]
+    .filter(Boolean).join(" · ");
+  nameButton.append(name, meta);
+  nameButton.addEventListener("click", () => openDeviceDialog(device));
+
+  const badge = document.createElement("span");
+  badge.className = `badge ${device.status}`;
+  badge.textContent = DEVICE_STATUS_LABELS[device.status] || device.status;
+
+  const latency = Number.isFinite(device.latency_ms) ? `${formatDecimal(device.latency_ms)} ms` : "—";
+  row.append(
+    createCell("Dispositivo", nameButton, "c-dev"),
+    createCell("Status", badge, "c-dstatus"),
+    createCell("Resposta", latency, "c-dresp device-value"),
+    createCell("Desde", deviceSinceText(device), "c-dsince device-value"),
+    createCell("Servidor", device.probe_name || "—", "c-dserver device-value"),
+  );
+  // A linha inteira abre a edição; o botão do nome já tem o próprio clique.
+  row.addEventListener("click", (event) => {
+    if (!event.target.closest("button")) openDeviceDialog(device);
+  });
+  return row;
+}
+
+// Redesenha o painel de dispositivos: resumo (no ar, fora do ar, sem leitura), tabela e estado vazio.
+// O painel nunca é escondido, para o botão "Adicionar dispositivo" continuar acessível sem cadastros.
+function renderDevices() {
+  const devices = [...state.devices].sort((left, right) =>
+    (DEVICE_STATUS_ORDER[left.status] ?? 1) - (DEVICE_STATUS_ORDER[right.status] ?? 1)
+    || (left.group || "").localeCompare(right.group || "", "pt-BR")
+    || left.name.localeCompare(right.name, "pt-BR"));
+  const count = (status) => devices.filter((device) => device.status === status).length;
+  elements.deviceSummary.textContent = devices.length
+    ? `${count("up")} no ar · ${count("down")} fora do ar · ${count("unknown")} sem leitura`
+    : "";
+  elements.deviceBody.replaceChildren(...devices.map(deviceRow));
+  elements.deviceTableWrap.hidden = devices.length === 0;
+  elements.deviceEmpty.hidden = devices.length > 0;
+}
+
+// Busca a lista de dispositivos. Falhas são tratadas aqui mesmo e NÃO propagam: um problema nesta
+// rota não pode marcar "Sem conexão com a API" nem derrubar a lista de hosts. Em caso de erro a
+// lista anterior continua na tela.
+async function loadDevices() {
+  try {
+    const response = await fetch("/api/devices", { cache: "no-store" });
+    if (!response.ok) throw new Error(`Falha ao buscar dispositivos: ${response.status}`);
+    state.devices = await response.json();
+    renderDevices();
+  } catch (error) {
+    console.warn(error);
+  }
+}
+
+// Dispositivo em edição (null = cadastro novo). Guarda o original para enviar só o que mudou.
+let editingDevice = null;
+
+// Mostra a porta só no teste por porta TCP, onde ela é obrigatória.
+function syncDevicePort() {
+  const tcp = elements.deviceMethod.value === "tcp";
+  elements.devicePortField.hidden = !tcp;
+  elements.devicePort.required = tcp;
+}
+
+// Preenche as opções do servidor que faz o ping (agentes de state.agents, por grupo e nome). Se o
+// servidor do dispositivo editado não está mais na lista, ele é mantido para a edição não perdê-lo.
+function fillDeviceProbes(selectedId) {
+  const agents = [...state.agents].sort((left, right) =>
+    left.group.localeCompare(right.group, "pt-BR") || left.name.localeCompare(right.name, "pt-BR"));
+  const options = [new Option("Selecione o servidor", "")];
+  if (selectedId && !agents.some((agent) => agent.id === selectedId)) {
+    options.push(new Option(editingDevice?.probe_name || selectedId, selectedId));
+  }
+  agents.forEach((agent) => options.push(new Option(`${agent.name} (${agent.group})`, agent.id)));
+  elements.deviceProbe.replaceChildren(...options);
+  elements.deviceProbe.value = selectedId || "";
+}
+
+// Abre o diálogo para cadastrar (sem argumento) ou editar um dispositivo, já preenchido.
+function openDeviceDialog(device = null) {
+  editingDevice = device;
+  elements.deviceDialogTitle.textContent = device ? "Editar dispositivo" : "Adicionar dispositivo";
+  elements.deviceDelete.hidden = !device;
+  elements.deviceName.value = device?.name ?? "";
+  elements.deviceKind.value = device?.kind ?? "impressora";
+  elements.deviceAddress.value = device?.address ?? "";
+  elements.deviceGroup.value = device?.group ?? "";
+  elements.deviceMethod.value = device?.method ?? "ping";
+  elements.devicePort.value = device?.port ?? "";
+  // Os grupos já existentes entram como sugestão no campo Grupo (o campo continua livre).
+  const groups = [...new Set(state.agents.map((agent) => agent.group))].sort((a, b) => a.localeCompare(b, "pt-BR"));
+  elements.deviceGroupList.replaceChildren(...groups.map((group) => new Option(group)));
+  fillDeviceProbes(device?.probe_id ?? "");
+  // No cadastro o servidor é obrigatório; na edição, um dispositivo sem servidor pode ser salvo sem escolher.
+  elements.deviceProbe.required = !device;
+  syncDevicePort();
+  elements.deviceDialog.showModal();
+  elements.deviceName.focus();
+}
+
+// Valores atuais do formulário, no formato da API. A porta só vale no TCP; no ping vai null.
+function deviceFormValues() {
+  const tcp = elements.deviceMethod.value === "tcp";
+  return {
+    name: elements.deviceName.value.trim(),
+    kind: elements.deviceKind.value,
+    address: elements.deviceAddress.value.trim(),
+    group: elements.deviceGroup.value.trim(),
+    probe_id: elements.deviceProbe.value,
+    method: elements.deviceMethod.value,
+    port: tcp ? Number(elements.devicePort.value) : null,
+  };
+}
+
+// Salva o dispositivo: POST no cadastro; na edição, PATCH só com os campos que mudaram (e, se nada
+// mudou, apenas fecha). Usa managementRequest (pede a chave de gestão) e recarrega a lista na hora.
+async function saveDevice() {
+  const values = deviceFormValues();
+  let url = "/api/devices";
+  let options;
+  if (editingDevice) {
+    const changes = {};
+    Object.entries(values).forEach(([field, value]) => {
+      // Servidor vazio na edição = nada escolhido: não envia, para não apagar o vínculo existente.
+      if (field === "probe_id" && !value) return;
+      if (value !== (editingDevice[field] ?? null)) changes[field] = value;
+    });
+    if (!Object.keys(changes).length) {
+      elements.deviceDialog.close();
+      return;
+    }
+    url = `/api/devices/${encodeURIComponent(editingDevice.id)}`;
+    options = { method: "PATCH", body: JSON.stringify(changes) };
+  } else {
+    options = { method: "POST", body: JSON.stringify(values) };
+  }
+  try {
+    const response = await managementRequest(url, options);
+    if (!response) return;
+    elements.deviceDialog.close();
+    await loadDevices();
+  } catch (error) {
+    window.alert(error.message);
+  }
+}
+
+// Exclui o dispositivo editado, depois de confirmação. Usa managementRequest (pede a chave).
+async function deleteDevice(device) {
+  const confirmed = window.confirm(`Excluir o dispositivo ${device.name}?\n\nEle deixará de ser monitorado.`);
+  if (!confirmed) return;
+  try {
+    const response = await managementRequest(`/api/devices/${encodeURIComponent(device.id)}`, { method: "DELETE" });
+    if (!response) return;
+    elements.deviceDialog.close();
+    await loadDevices();
+  } catch (error) {
+    window.alert(error.message);
+  }
+}
+
 /* ---------- Atualização periódica ---------- */
 
 // Busca a lista de agentes e redesenha a tela. Roda ao abrir a página, a cada 30 s e ao voltar à aba.
@@ -890,6 +1141,9 @@ async function deleteAgent(agent) {
 async function refresh() {
   if (state.refreshing || document.hidden) return;
   state.refreshing = true;
+  // Os dispositivos começam a carregar em paralelo, mas com tratamento próprio (loadDevices nunca
+  // lança erro): se falharem, os hosts continuam normais e a tela não diz "Sem conexão com a API".
+  const devicesLoad = loadDevices();
   try {
     // "no-store" impede o navegador de reaproveitar uma resposta antiga do cache.
     const response = await fetch("/api/agents", { cache: "no-store" });
@@ -901,6 +1155,8 @@ async function refresh() {
       closeDetails();
     }
     renderHosts();
+    // Espera os dispositivos antes de avisar o tv.js, para o modo apresentação já ver a lista nova.
+    await devicesLoad;
     setUpdated(true);
     // O histórico dos gráficos é atualizado com menos frequência (3 min) que a lista (30 s).
     if (state.selectedAgentId && Date.now() - state.metricsLoadedAt >= METRICS_REFRESH_MS) {
@@ -929,9 +1185,9 @@ elements.deleteHost.addEventListener("click", () => {
   const agent = selectedAgent();
   if (agent) deleteAgent(agent);
 });
-// Esc fecha o painel, exceto com a janela de edição aberta (ali o Esc fecha só a janela).
+// Esc fecha o painel, exceto com uma janela de edição aberta (ali o Esc fecha só a janela).
 document.addEventListener("keydown", (event) => {
-  if (event.key === "Escape" && state.selectedAgentId && !elements.editDialog.open) closeDetails();
+  if (event.key === "Escape" && state.selectedAgentId && !elements.editDialog.open && !elements.deviceDialog.open) closeDetails();
 });
 // Botão de tema: alterna entre claro e escuro.
 elements.themeToggle.addEventListener("click", () => {
@@ -1014,12 +1270,28 @@ elements.editForm.addEventListener("submit", async (event) => {
 elements.closeEdit.addEventListener("click", () => elements.editDialog.close());
 elements.cancelEdit.addEventListener("click", () => elements.editDialog.close());
 
+// Dispositivos: botão de adicionar, troca do tipo de verificação (mostra/esconde a porta), envio do
+// formulário (preventDefault evita recarregar a página), exclusão e botões de fechar do diálogo.
+elements.addDevice.addEventListener("click", () => openDeviceDialog());
+elements.deviceMethod.addEventListener("change", syncDevicePort);
+elements.deviceForm.addEventListener("submit", (event) => {
+  event.preventDefault();
+  saveDevice();
+});
+elements.deviceDelete.addEventListener("click", () => {
+  if (editingDevice) deleteDevice(editingDevice);
+});
+elements.deviceClose.addEventListener("click", () => elements.deviceDialog.close());
+elements.deviceCancel.addEventListener("click", () => elements.deviceDialog.close());
+
 // Inicialização, quando a página termina de carregar: cria os gráficos, marca a ordenação inicial,
 // busca os dados e agenda a atualização periódica. Ao voltar para a aba (visibilitychange), atualiza
 // na hora, pois refresh() ignora chamadas enquanto a aba está escondida.
 window.addEventListener("DOMContentLoaded", () => {
   initializeCharts();
   updateSortIndicators();
+  // Mostra já o estado vazio do painel de dispositivos (e não uma tabela sem linhas) enquanto a API não responde.
+  renderDevices();
   refresh();
   window.setInterval(refresh, AGENTS_REFRESH_MS);
   document.addEventListener("visibilitychange", refresh);

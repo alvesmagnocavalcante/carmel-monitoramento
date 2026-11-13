@@ -22,7 +22,7 @@ fastapi dev main.py --port 8009   # dashboard em http://localhost:8009
 | `METRICS_RETENTION_DAYS` | Dias de histórico mantidos (padrão 14, `0` desativa a limpeza). |
 | `CORS_ORIGINS` | Origens permitidas para chamadas de outro site (padrão `localhost:8009`). O dashboard não precisa. |
 
-Testes: `cd monitor/api && python -m unittest test_db`.
+Testes: `cd monitor/api && python -m unittest test_db test_devices`.
 Deploy: `cd monitor/api && fastapi deploy`.
 
 ## Agente
@@ -35,7 +35,7 @@ go build -ldflags "-X main.defaultAgentToken=<AGENT_TOKEN>" -o dist/monitor-agen
 O agente também envia informações do computador (Windows, CPU, memória, discos fixos, IPs, uptime e versão do agente, definida em `agentVersion`; para mudar no build: `-X main.agentVersion=1.2.0`). Ao publicar uma versão nova, faça o deploy da API **antes** de atualizar os agentes.
 
 Na primeira execução o agente pergunta o grupo (ou use `--group "Nome"`) e grava `config.json` ao lado do exe.
-Campos: `api_url`, `group`, `token`, `interval_seconds`. As variáveis `API_URL`, `AGENT_GROUP`, `AGENT_TOKEN`, `INTERVAL_SECONDS` e `CONFIG_PATH` têm precedência sobre o arquivo.
+Campos: `api_url`, `group`, `token`, `interval_seconds`, `probe`. As variáveis `API_URL`, `AGENT_GROUP`, `AGENT_TOKEN`, `INTERVAL_SECONDS`, `AGENT_PROBE` e `CONFIG_PATH` têm precedência sobre o arquivo.
 
 Se a API estiver fora do ar, os heartbeats ficam numa fila em memória (1000 itens) e são reenviados com backoff.
 
@@ -60,6 +60,23 @@ git push origin agent-vX.Y.Z
 O repositório ou, no mínimo, os assets da release precisam estar acessíveis pelos
 computadores. O playbook baixa o `.exe` diretamente do GitHub e valida o SHA-256
 antes da instalação.
+
+## Dispositivos sem agente (impressoras, antenas)
+
+Equipamentos que não aceitam o agente são monitorados por **ping** feito por um servidor do mesmo local, a **sonda**:
+
+```
+servidor do hotel (agente com "probe": true) --ping--> impressora / antena
+        |
+        +--- 1 envio por ciclo com todos os resultados ---> API ---> painel (seção "Dispositivos")
+```
+
+- **Ligar a sonda** (agente 1.2.0 ou mais novo): no servidor, `"probe": true` no `config.json` (ou `AGENT_PROBE=true`). No Ansible, defina `monitor_agent_probe: true` para o host. Por padrão fica **desligada** e agentes antigos ignoram o campo.
+- **Cadastrar** dispositivos pelo painel (nome, tipo, IP, grupo e o servidor que faz o ping, por ping ou por porta TCP). A sonda busca a lista sozinha; não é preciso mexer no servidor para adicionar ou remover equipamentos.
+- **Status**: "fora do ar" só depois de 3 falhas seguidas. Sem leitura recente (a sonda desligou) o status é "sem leitura", nunca "fora do ar".
+- **Banco**: o estado fica em memória na API e é gravado só quando muda (ou a cada 5 min), em um comando por lote, para não pesar no Turso.
+- Rotas: `GET/POST /api/devices`, `PATCH/DELETE /api/devices/{id}` (escrita com a chave de gestão) e, para a sonda, `GET /api/probe/targets` e `POST /api/probe/results` (token do agente).
+- Testes: `cd monitor/api && python -m unittest test_devices`.
 
 ## Instalação remota com Ansible e Semaphore
 

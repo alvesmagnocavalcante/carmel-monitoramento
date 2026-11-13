@@ -28,11 +28,14 @@ var defaultAgentToken string
 
 // Config reúne as configurações do agente, lidas do config.json (campos com "json").
 // AgentID é calculado em tempo de execução e nunca gravado no arquivo ("-").
+// Probe liga o "modo sonda" (ping em dispositivos sem agente); fica desligado por padrão
+// e agentes antigos simplesmente ignoram o campo desconhecido.
 type Config struct {
 	APIURL          string `json:"api_url"`
 	Group           string `json:"group"`
 	Token           string `json:"token"`
 	IntervalSeconds int    `json:"interval_seconds"`
+	Probe           bool   `json:"probe"`
 	AgentID         string `json:"-"`
 }
 
@@ -150,7 +153,7 @@ func configPath() string {
 }
 
 // applyEnvironment sobrescreve a configuração com variáveis de ambiente, quando definidas
-// (API_URL, AGENT_GROUP, AGENT_TOKEN, INTERVAL_SECONDS). Útil para testes e ajustes rápidos.
+// (API_URL, AGENT_GROUP, AGENT_TOKEN, INTERVAL_SECONDS, AGENT_PROBE). Útil para testes e ajustes rápidos.
 func applyEnvironment(config *Config) error {
 	if value := os.Getenv("API_URL"); value != "" {
 		config.APIURL = value
@@ -167,6 +170,14 @@ func applyEnvironment(config *Config) error {
 			return fmt.Errorf("INTERVAL_SECONDS must be an integer: %w", err)
 		}
 		config.IntervalSeconds = seconds
+	}
+	if value := os.Getenv("AGENT_PROBE"); value != "" {
+		// ParseBool aceita true/false/1/0 (e variações como T/F); qualquer outra coisa é erro claro.
+		probe, err := strconv.ParseBool(value)
+		if err != nil {
+			return fmt.Errorf("AGENT_PROBE must be true, false, 1 or 0: %w", err)
+		}
+		config.Probe = probe
 	}
 	return nil
 }

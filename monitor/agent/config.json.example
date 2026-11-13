@@ -2,5 +2,6 @@
   "api_url": "https://monitoramento-carmel.fastapicloud.dev",
   "group": "",
   "token": "",
-  "interval_seconds": 60
+  "interval_seconds": 60,
+  "probe": false
 }

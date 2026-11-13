@@ -8,7 +8,9 @@ os tipos e limites automaticamente. Se um dado de entrada não cabe, a API respo
   - AgentUpdate : o que o painel envia para renomear/mover um host.
 """
 
+import re
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -161,3 +163,132 @@ class HeartbeatAccepted(BaseModel):
 
     accepted: bool = True
     received_at: datetime
+
+
+# ---------- Dispositivos (impressoras, antenas...) monitorados por ping ----------
+#
+# Um dispositivo não roda agente. Um servidor do mesmo local (a "sonda", que é um agente já
+# cadastrado) faz o ping e informa o resultado à API. Ver devices.py.
+
+DeviceKind = Literal["impressora", "antena", "outro"]
+# "ping" = eco ICMP; "tcp" = tenta abrir uma conexão na porta (para equipamentos que não respondem a ping).
+DeviceMethod = Literal["ping", "tcp"]
+# "up" = no ar, "down" = fora do ar, "unknown" = sem leitura recente (ex.: a sonda está desligada).
+DeviceStatus = Literal["up", "down", "unknown"]
+
+# Nome de host ou IPv4: letras, números, ponto e hífen, sem espaços. Evita lixo e injeção no ping.
+_ADDRESS_PATTERN = re.compile(r"^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?$")
+
+
+def _check_address(value: str) -> str:
+    value = value.strip()
+    if not _ADDRESS_PATTERN.match(value):
+        raise ValueError("address must be an IP address or host name")
+    return value
+
+
+class DeviceIn(BaseModel):
+    """Cadastro de um dispositivo (feito pelo painel, com a chave de gestão)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(min_length=1, max_length=100)
+    kind: DeviceKind
+    address: str = Field(min_length=1, max_length=255)
+    group: str = Field(min_length=1, max_length=100)
+    # Id do agente (servidor) que faz o ping deste dispositivo.
+    probe_id: str = Field(min_length=1, max_length=128)
+    method: DeviceMethod = "ping"
+    port: int | None = Field(default=None, ge=1, le=65535)
+
+    @field_validator("address")
+    @classmethod
+    def _valid_address(cls, value: str) -> str:
+        return _check_address(value)
+
+    @model_validator(mode="after")
+    def tcp_needs_port(self) -> "DeviceIn":
+        # Verificação por conexão só faz sentido com a porta informada.
+        if self.method == "tcp" and self.port is None:
+            raise ValueError("port is required when method is tcp")
+        return self
+
+
+class DeviceUpdate(BaseModel):
+    """Alteração de um dispositivo: informe só o que mudou."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str | None = Field(default=None, min_length=1, max_length=100)
+    kind: DeviceKind | None = None
+    address: str | None = Field(default=None, min_length=1, max_length=255)
+    group: str | None = Field(default=None, min_length=1, max_length=100)
+    probe_id: str | None = Field(default=None, min_length=1, max_length=128)
+    method: DeviceMethod | None = None
+    port: int | None = Field(default=None, ge=1, le=65535)
+
+    @field_validator("address")
+    @classmethod
+    def _valid_address(cls, value: str | None) -> str | None:
+        return _check_address(value) if value is not None else None
+
+    @model_validator(mode="after")
+    def require_change(self) -> "DeviceUpdate":
+        if not self.model_fields_set:
+            raise ValueError("at least one field is required")
+        return self
+
+
+class DeviceOut(BaseModel):
+    """Um dispositivo como o painel o vê, com o estado atual."""
+
+    id: str
+    name: str
+    kind: DeviceKind
+    address: str
+    group: str
+    probe_id: str
+    # Nome do servidor que faz o ping (None se o agente foi excluído).
+    probe_name: str | None
+    method: DeviceMethod
+    port: int | None
+    status: DeviceStatus
+    # Tempo de resposta do último ping bem-sucedido, em milissegundos.
+    latency_ms: float | None
+    # Desde quando está neste estado (ex.: fora do ar desde...).
+    status_since: datetime | None
+    last_checked_at: datetime | None
+
+
+class ProbeTarget(BaseModel):
+    """O que a sonda precisa saber de um dispositivo para fazer o ping."""
+
+    id: str
+    address: str
+    method: DeviceMethod
+    port: int | None
+
+
+class ProbeResult(BaseModel):
+    """Resultado de um ping: respondeu ou não, e em quanto tempo."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    device_id: str = Field(min_length=1, max_length=64)
+    ok: bool
+    latency_ms: float | None = Field(default=None, ge=0, le=600_000)
+
+
+class ProbeResults(BaseModel):
+    """Lote enviado pela sonda a cada ciclo: todos os resultados juntos (1 envio, poucas idas ao banco)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    probe_id: str = Field(min_length=1, max_length=128)
+    results: list[ProbeResult] = Field(max_length=500)
+
+
+class ProbeAccepted(BaseModel):
+    """Resposta à sonda: quantos resultados foram aceitos (os de dispositivos desconhecidos são ignorados)."""
+
+    accepted: int

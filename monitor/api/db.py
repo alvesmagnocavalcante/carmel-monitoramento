@@ -222,6 +222,11 @@ class Database:
     def _agent_exists(connection: Any, agent_id: str) -> bool:
         return connection.execute("SELECT 1 FROM agents WHERE id = ?", (agent_id,)).fetchone() is not None
 
+    def agent_exists(self, agent_id: str) -> bool:
+        """Confere se um agente (host) está cadastrado. Usado ao escolher a sonda de um dispositivo."""
+        with self.connect() as connection:
+            return self._agent_exists(connection, agent_id)
+
     def _known_agent(self, connection: Any, agent_id: str, now: datetime) -> dict[str, Any] | None:
         """Hostname, SO, intervalo e system_info gravados; só consulta o banco se não souber ou se for velho."""
         entry = self._known_agents.get(agent_id)

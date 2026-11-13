@@ -8,15 +8,17 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"time"
 )
 
 // errRejected marca uma recusa definitiva da API (ex.: 422): repetir o mesmo envio nunca resolve.
 var errRejected = errors.New("heartbeat rejected")
 
-// APIClient envia heartbeats para a API (POST em /api/heartbeat), autenticando com o token.
+// APIClient conversa com a API autenticando com o token: envia heartbeats (POST em
+// /api/heartbeat) e, no modo sonda, busca alvos e envia resultados de ping.
 type APIClient struct {
-	url        string
+	baseURL    string
 	token      string
 	httpClient *http.Client
 }
@@ -25,8 +27,8 @@ type APIClient struct {
 // numa conexão que não responde.
 func newAPIClient(apiURL, token string) *APIClient {
 	return &APIClient{
-		url:   apiURL + "/api/heartbeat",
-		token: token,
+		baseURL: apiURL,
+		token:   token,
 		httpClient: &http.Client{
 			Timeout: 30 * time.Second,
 		},
@@ -41,7 +43,7 @@ func (client *APIClient) send(ctx context.Context, heartbeat Heartbeat) error {
 		return fmt.Errorf("encode heartbeat: %w", err)
 	}
 
-	request, err := http.NewRequestWithContext(ctx, http.MethodPost, client.url, bytes.NewReader(body))
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, client.baseURL+"/api/heartbeat", bytes.NewReader(body))
 	if err != nil {
 		return fmt.Errorf("create request: %w", err)
 	}
@@ -72,4 +74,61 @@ func (client *APIClient) send(ctx context.Context, heartbeat Heartbeat) error {
 func isPermanentRejection(status int) bool {
 	return status >= 400 && status < 500 &&
 		status != http.StatusRequestTimeout && status != http.StatusTooManyRequests
+}
+
+// fetchProbeTargets pede à API a lista de dispositivos que esta sonda deve verificar.
+// Lista vazia significa "nada a fazer neste ciclo". Qualquer falha vira erro e o chamador
+// apenas registra no log.
+func (client *APIClient) fetchProbeTargets(ctx context.Context, agentID string) ([]probeTarget, error) {
+	endpoint := client.baseURL + "/api/probe/targets?agent_id=" + url.QueryEscape(agentID)
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return nil, fmt.Errorf("create probe targets request: %w", err)
+	}
+	request.Header.Set("Authorization", "Bearer "+client.token)
+
+	response, err := client.httpClient.Do(request)
+	if err != nil {
+		return nil, fmt.Errorf("fetch probe targets: %w", err)
+	}
+	defer response.Body.Close()
+
+	if response.StatusCode != http.StatusOK {
+		message, _ := io.ReadAll(io.LimitReader(response.Body, 1024))
+		return nil, fmt.Errorf("API returned %s: %s", response.Status, bytes.TrimSpace(message))
+	}
+	var targets []probeTarget
+	if err := json.NewDecoder(response.Body).Decode(&targets); err != nil {
+		return nil, fmt.Errorf("decode probe targets: %w", err)
+	}
+	return targets, nil
+}
+
+// sendProbeResults envia todos os resultados do ciclo em um único POST. Não há nova
+// tentativa: o próximo ciclo traz leituras novas, então qualquer falha só vira erro.
+func (client *APIClient) sendProbeResults(ctx context.Context, agentID string, results []probeResult) error {
+	body, err := json.Marshal(probeReport{ProbeID: agentID, Results: results})
+	if err != nil {
+		return fmt.Errorf("encode probe results: %w", err)
+	}
+	request, err := http.NewRequestWithContext(
+		ctx, http.MethodPost, client.baseURL+"/api/probe/results", bytes.NewReader(body),
+	)
+	if err != nil {
+		return fmt.Errorf("create probe results request: %w", err)
+	}
+	request.Header.Set("Authorization", "Bearer "+client.token)
+	request.Header.Set("Content-Type", "application/json")
+
+	response, err := client.httpClient.Do(request)
+	if err != nil {
+		return fmt.Errorf("send probe results: %w", err)
+	}
+	defer response.Body.Close()
+
+	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
+		message, _ := io.ReadAll(io.LimitReader(response.Body, 1024))
+		return fmt.Errorf("API returned %s: %s", response.Status, bytes.TrimSpace(message))
+	}
+	return nil
 }

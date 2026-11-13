@@ -188,7 +188,7 @@ html.theme-fading .logo { animation: fade-in 350ms ease; }
 .updated-at.error { color: var(--offline); font-weight: 600; }
 
 /* Campos em formato de pílula (seletor, busca e campos do diálogo) com o mesmo visual. */
-.select-field select, .search-field input, .edit-dialog input {
+.select-field select, .search-field input, .edit-dialog input, .edit-dialog select {
   color: var(--ink);
   border: 1px solid var(--line);
   border-radius: 999px;
@@ -299,6 +299,12 @@ html.theme-fading .logo { animation: fade-in 350ms ease; }
 .badge.warn { padding: 3px 9px; color: var(--accent-text); border: 1px solid currentColor; font-size: 10px; letter-spacing: 1px; }
 .badge.offline { color: var(--offline); background: color-mix(in srgb, var(--offline) 14%, transparent); }
 
+/* Selos dos dispositivos: "No ar" reaproveita o verde do online, "Fora do ar" a cor de offline e
+   "Sem leitura" é neutro (cinza-café), pois ainda não se sabe se está bem ou mal. */
+.badge.up { color: var(--online); background: color-mix(in srgb, var(--online) 14%, transparent); }
+.badge.down { color: var(--offline); background: color-mix(in srgb, var(--offline) 14%, transparent); }
+.badge.unknown { color: var(--muted); background: color-mix(in srgb, var(--muted) 14%, transparent); }
+
 /* Botões de ordenação do cabeçalho: setinha ↕ neutra; a coluna ativa mostra ↑ (crescente) ou ↓ (decrescente). */
 .sort-button { position: relative; padding: 0 14px 0 0; color: inherit; font: inherit; letter-spacing: inherit; text-transform: inherit; border: 0; background: transparent; cursor: pointer; }
 .sort-button::after { content: "↕"; position: absolute; right: 0; opacity: 0.5; }
@@ -322,6 +328,24 @@ html.theme-fading .logo { animation: fade-in 350ms ease; }
   .layout.has-details .host-table th { padding-inline: 8px; letter-spacing: 1px; }
   .layout.has-details .host-table td { padding-inline: 8px; }
 }
+
+/* ---------- Painel de dispositivos ---------- */
+/* Segundo painel dentro da coluna principal: o espaço de cima separa-o do painel de hosts. */
+.panel + .device-panel { margin-top: 24px; }
+/* Resumo "N no ar · M fora do ar · K sem leitura" ao lado do botão de adicionar. */
+.device-controls { flex-wrap: wrap; justify-content: flex-end; }
+.device-summary { color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; }
+.device-add { padding: 8px 16px; font-size: 13px; }
+/* Larguras das colunas (a tabela usa table-layout: fixed, herdado de .host-table). A coluna do
+   dispositivo leva a maior parte, pois traz nome e a linha "tipo · grupo · endereço". */
+.device-table .col-dev { width: 36%; }
+.device-table .col-dstatus { width: max(13%, 130px); }
+.device-table .col-dresp { width: max(11%, 96px); }
+.device-table .col-dsince { width: max(17%, 150px); }
+/* Valores simples (resposta, desde, servidor): texto discreto, números alinhados em colunas. */
+.device-value { color: var(--ink-soft); font-size: 13px; font-weight: 500; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+/* No estado vazio o aviso é só uma linha, então precisa de menos folga que o da lista de hosts. */
+.device-empty { padding: 28px 20px; }
 
 /* Paginação (Anterior/Próxima) e mensagem de lista vazia. */
 .pagination { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-top: 16px; color: var(--muted); font-size: 12px; }
@@ -412,6 +436,20 @@ html.theme-fading .logo { animation: fade-in 350ms ease; }
 .dialog-heading { display: flex; align-items: flex-start; justify-content: space-between; }
 .edit-dialog label { display: grid; gap: 8px; color: var(--muted); font-size: 12px; font-weight: 600; }
 .edit-dialog input { height: 42px; padding: 0 16px; }
+/* Seletores do diálogo de dispositivo: mesma altura dos campos de texto, com folga à direita para a seta. */
+.edit-dialog select { height: 42px; padding: 0 34px 0 16px; }
+/* Campos herdam o negrito dos rótulos (600); o texto digitado fica no peso normal. */
+.edit-dialog input, .edit-dialog select { font-weight: 400; }
+.edit-dialog select:hover, .edit-dialog input:hover { border-color: var(--control-line); }
+/* O display: grid do rótulo anularia o atributo hidden; sem esta regra o campo Porta nunca sumiria. */
+.edit-dialog label[hidden] { display: none; }
+/* Linha de dois campos lado a lado (Verificação e Porta). Com a Porta escondida, a Verificação ocupa a linha toda. */
+.field-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.field-row:has(> label[hidden]) { grid-template-columns: minmax(0, 1fr); }
+/* Botão Excluir do diálogo de dispositivo: fica à esquerda (margin-right: auto) e avisa com a cor de alerta ao passar o mouse. */
+.danger-button { margin-right: auto; }
+.danger-button:hover { color: var(--offline); border-color: var(--offline); }
+.danger-button[hidden] { display: none; }
 .dialog-actions { display: flex; justify-content: flex-end; gap: 12px; margin-top: 4px; }
 .primary-button, .secondary-button { padding: 10px 18px; font-weight: 600; border-radius: 999px; cursor: pointer; }
 .primary-button { color: var(--on-primary); border: 1px solid var(--primary); background: var(--primary); }
@@ -514,6 +552,34 @@ html.theme-fading .logo { animation: fade-in 350ms ease; }
   .host-table tbody .group-header td { padding: 14px 2px 2px; }
   .pagination { flex-direction: column; align-items: stretch; }
   .pagination div { justify-content: space-between; }
+
+  /* Dispositivos no celular: cada linha vira um card, como os hosts, mas com áreas próprias:
+     nome e status em cima; resposta e "desde" no meio; servidor embaixo. Cada célula mostra seu
+     rótulo (data-label). A regra vem depois da dos hosts, com a mesma força, e por isso vence. */
+  .device-panel .panel-controls { justify-content: space-between; }
+  .device-table tbody tr {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-areas:
+      "dev dstatus"
+      "dresp dsince"
+      "dserver dserver";
+  }
+  .host-table td.c-dev { grid-area: dev; }
+  .host-table td.c-dstatus { grid-area: dstatus; justify-self: end; }
+  .host-table td.c-dresp { grid-area: dresp; }
+  .host-table td.c-dsince { grid-area: dsince; }
+  .host-table td.c-dserver { grid-area: dserver; }
+  .host-table td.c-dresp::before, .host-table td.c-dsince::before, .host-table td.c-dserver::before {
+    content: attr(data-label);
+    display: block;
+    margin-bottom: 4px;
+    color: var(--muted);
+    font-family: var(--sans);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+  }
   .chart-stack { grid-template-columns: 1fr; }
   .chart-wrap { height: 190px; }
   .page-footer { flex-direction: column; gap: 4px; }
@@ -549,6 +615,18 @@ body.tv-active .app { display: none; }
 .tv-kpi-online strong { color: var(--online); }
 .tv-kpi-offline strong { color: var(--offline); }
 .tv-kpi-warn strong { color: var(--accent-text); }
+/* Indicador de dispositivos fora do ar: o display do .tv-kpi anularia o atributo hidden, então ele é
+   reforçado aqui. O rótulo é longo e pode quebrar em duas linhas (max-width) sem alargar o cabeçalho.
+   Com a contagem maior que zero (classe "alert", posta pelo tv.js) o número usa a cor de alerta. */
+.tv-kpi-devices[hidden] { display: none; }
+/* Com o quinto indicador visível, o cabeçalho ficaria mais largo que a tela em monitores de 1366px e
+   empurraria a grade de cartões para fora. Por isso a grade da TV tem coluna que pode encolher
+   (minmax(0, 1fr)), os indicadores podem ficar mais estreitos (min-width: 0) e o espaço entre eles diminui. */
+.tv { grid-template-columns: minmax(0, 1fr); }
+.tv-head, .tv-kpis { min-width: 0; }
+.tv-kpis:has(.tv-kpi-devices:not([hidden])) { gap: clamp(8px, 1.2vw, 40px); }
+.tv-kpi-devices { max-width: 14em; text-align: center; }
+.tv-kpi-devices.alert strong { color: var(--offline); }
 .tv-meta { display: grid; justify-items: end; gap: 2px; }
 .tv-meta #tv-clock { color: var(--ink); font-family: var(--serif); font-size: clamp(34px, 3.6vw, 66px); font-weight: 500; line-height: 1; }
 .tv-meta #tv-date { color: var(--ink-soft); font-size: clamp(11px, 0.95vw, 18px); }

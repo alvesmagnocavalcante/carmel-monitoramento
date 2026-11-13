@@ -24,3 +24,8 @@ monitor_agent_release_tag: ''
 monitor_agent_token: "{{ lookup('ansible.builtin.env', 'MONITOR_AGENT_TOKEN') }}"
 # Grupo (ex.: hotel/setor) do equipamento. Vazio aqui; cada host deve definir no inventário.
 monitor_agent_group: ''
+# Modo sonda (agente 1.2.0 ou mais novo): quando true, este computador também faz ping nos dispositivos
+# (impressoras, antenas...) que forem cadastrados para ele no painel e envia o resultado à API.
+# Fica false na maioria dos computadores; defina true só nos servidores que vigiam dispositivos
+# (por host ou grupo, no inventário do Semaphore). Agentes anteriores à 1.2.0 ignoram este campo.
+monitor_agent_probe: false

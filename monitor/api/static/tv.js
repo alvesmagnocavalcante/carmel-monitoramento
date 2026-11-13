@@ -38,6 +38,8 @@ const tv = {
   online: document.querySelector("#tv-online"),
   offline: document.querySelector("#tv-offline"),
   diskFull: document.querySelector("#tv-disk-full"),
+  devicesKpi: document.querySelector("#tv-devices-kpi"),
+  devicesDown: document.querySelector("#tv-devices-down"),
   clock: document.querySelector("#tv-clock"),
   date: document.querySelector("#tv-date"),
   updated: document.querySelector("#tv-updated"),
@@ -169,6 +171,20 @@ function tvFit(groupSizes) {
   return { font: TV_MIN_FONT, extra: 0 };
 }
 
+// Indicador "Dispositivos fora do ar" do cabeçalho. Só aparece quando existe ao menos um dispositivo
+// cadastrado (sem dispositivos ele nem faz sentido) e usa a cor de alerta quando a contagem é maior
+// que zero. Com um grupo escolhido (?grupo=), conta só os dispositivos daquele grupo, como os demais
+// indicadores fazem com as máquinas. Não mexe no cálculo de encaixe dos cartões (tvFit).
+function renderTvDevices() {
+  const devices = state.selectedGroup === "all"
+    ? state.devices
+    : state.devices.filter((device) => device.group === state.selectedGroup);
+  const down = devices.filter((device) => device.status === "down").length;
+  tv.devicesKpi.hidden = devices.length === 0;
+  tv.devicesDown.textContent = down;
+  tv.devicesKpi.classList.toggle("alert", down > 0);
+}
+
 // Redesenha a tela inteira do modo apresentação: contadores do topo, grupos ordenados e cartões.
 // Chamada a cada atualização de dados, a cada troca de grupo da rotação e ao redimensionar a janela.
 function renderTv() {
@@ -180,6 +196,7 @@ function renderTv() {
   tv.online.textContent = online;
   tv.offline.textContent = agents.length - online;
   tv.diskFull.textContent = agents.filter((agent) => fullVolumes(agent).length).length;
+  renderTvDevices();
   tv.updated.textContent = elements.updatedAt.textContent;
   tv.updated.classList.toggle("error", elements.updatedAt.classList.contains("error"));
 

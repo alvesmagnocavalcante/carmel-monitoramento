@@ -23,12 +23,19 @@ from fastapi.staticfiles import StaticFiles
 
 from auth import require_agent_token, require_management_key
 from db import Database
+from devices import Devices
 from models import (
     AgentOut,
     AgentUpdate,
+    DeviceIn,
+    DeviceOut,
+    DeviceUpdate,
     HeartbeatAccepted,
     HeartbeatIn,
     MetricOut,
+    ProbeAccepted,
+    ProbeResults,
+    ProbeTarget,
 )
 
 
@@ -37,13 +44,16 @@ STATIC_DIR = BASE_DIR / "static"
 # Escolhe o banco pelas variáveis de ambiente: Turso (produção) se TURSO_* estiverem
 # definidas, senão um arquivo SQLite local (monitor.db, ao lado deste arquivo).
 database = Database.from_environment(BASE_DIR / "monitor.db")
+# Dispositivos monitorados por ping (impressoras, antenas...); ver devices.py.
+devices = Devices(database)
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     # Roda uma vez quando a API sobe: cria as tabelas (se não existirem) e carrega o
-    # que já se sabe dos agentes. O "yield" é o momento em que a API fica atendendo.
+    # que já se sabe dos agentes e dos dispositivos. O "yield" é o momento em que a API fica atendendo.
     database.initialize()
+    devices.initialize()
     yield
 
 
@@ -146,6 +156,82 @@ def delete_agent(agent_id: str) -> Response:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Agent not found")
     _forget_agents()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+# ---------- Dispositivos (impressoras, antenas...) monitorados por ping ----------
+
+
+def _require_probe(probe_id: str) -> None:
+    # O servidor que vai pingar precisa ser um agente já cadastrado.
+    if not database.agent_exists(probe_id):
+        raise HTTPException(
+            status_code=422,
+            detail="probe_id must be a registered agent",
+        )
+
+
+@app.get("/api/devices", response_model=list[DeviceOut])
+def list_devices() -> list[DeviceOut]:
+    # Lista para o painel (lida da memória, sem ir ao banco na maioria das vezes).
+    return [DeviceOut(**device) for device in devices.list_all()]
+
+
+@app.post(
+    "/api/devices",
+    response_model=DeviceOut,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_management_key)],
+)
+def create_device(data: DeviceIn) -> DeviceOut:
+    _require_probe(data.probe_id)
+    return DeviceOut(**devices.create(data.model_dump()))
+
+
+@app.patch(
+    "/api/devices/{device_id}",
+    response_model=DeviceOut,
+    dependencies=[Depends(require_management_key)],
+)
+def update_device(device_id: str, changes: DeviceUpdate) -> DeviceOut:
+    if changes.probe_id is not None:
+        _require_probe(changes.probe_id)
+    # exclude_unset: só os campos que o painel enviou (um "port": null explícito limpa a porta).
+    updated = devices.update(device_id, changes.model_dump(exclude_unset=True))
+    if updated is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Device not found")
+    return DeviceOut(**updated)
+
+
+@app.delete(
+    "/api/devices/{device_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(require_management_key)],
+)
+def delete_device(device_id: str) -> Response:
+    if not devices.delete(device_id):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Device not found")
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@app.get(
+    "/api/probe/targets",
+    response_model=list[ProbeTarget],
+    dependencies=[Depends(require_agent_token)],
+)
+def probe_targets(agent_id: str = Query(min_length=1, max_length=128)) -> list[ProbeTarget]:
+    # Chamada pela sonda: quais dispositivos ela deve pingar. Vazio = nada a fazer.
+    return [ProbeTarget(**target) for target in devices.targets(agent_id)]
+
+
+@app.post(
+    "/api/probe/results",
+    response_model=ProbeAccepted,
+    dependencies=[Depends(require_agent_token)],
+)
+def probe_results(payload: ProbeResults) -> ProbeAccepted:
+    # Chamada pela sonda a cada ciclo, com todos os resultados juntos.
+    accepted = devices.record_results(payload.probe_id, [r.model_dump() for r in payload.results])
+    return ProbeAccepted(accepted=accepted)
 
 
 @app.get("/api/agents/{agent_id}/metrics", response_model=list[MetricOut])

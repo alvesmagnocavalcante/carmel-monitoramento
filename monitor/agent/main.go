@@ -42,6 +42,24 @@ func runAgent(ctx context.Context, group string) error {
 		runSender(ctx, client, queue)
 	}()
 	interval := time.Duration(config.IntervalSeconds) * time.Second
+	// A sonda roda em goroutine própria, separada da coleta: uma impressora lenta ou um
+	// erro na sonda nunca pode atrasar nem derrubar o monitoramento deste computador.
+	probeDone := make(chan struct{})
+	if config.Probe {
+		log.Printf("probe mode enabled")
+		go func() {
+			defer close(probeDone)
+			// O recover garante que um pânico na sonda seja apenas registrado no log.
+			defer func() {
+				if recovered := recover(); recovered != nil {
+					log.Printf("probe stopped by panic: %v", recovered)
+				}
+			}()
+			runProbe(ctx, client, config.AgentID, interval)
+		}()
+	} else {
+		close(probeDone)
+	}
 	log.Printf("agent started; group=%s id=%s interval=%s", config.Group, config.AgentID, interval)
 
 	// Primeira coleta imediata, sem esperar o primeiro intervalo.
@@ -54,6 +72,7 @@ func runAgent(ctx context.Context, group string) error {
 		case <-ctx.Done():
 			// Aguarda o envio terminar antes de sair.
 			<-senderDone
+			<-probeDone
 			log.Printf("agent %s stopped", config.AgentID)
 			return nil
 		case <-ticker.C:
