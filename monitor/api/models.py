@@ -170,7 +170,7 @@ class HeartbeatAccepted(BaseModel):
 # Um dispositivo não roda agente. Um servidor do mesmo local (a "sonda", que é um agente já
 # cadastrado) faz o ping e informa o resultado à API. Ver devices.py.
 
-DeviceKind = Literal["impressora", "antena", "outro"]
+DeviceKind = Literal["impressora", "camera", "antena", "outro"]
 # "ping" = eco ICMP; "tcp" = tenta abrir uma conexão na porta (para equipamentos que não respondem a ping).
 DeviceMethod = Literal["ping", "tcp"]
 # "up" = no ar, "down" = fora do ar, "unknown" = sem leitura recente (ex.: a sonda está desligada).

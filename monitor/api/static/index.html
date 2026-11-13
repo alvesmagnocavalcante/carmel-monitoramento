@@ -23,10 +23,10 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300..700&family=Cormorant:wght@400..700&display=swap">
-  <link rel="stylesheet" href="/static/styles.css?v=20261113-1">
+  <link rel="stylesheet" href="/static/styles.css?v=20261113-2">
   <!-- Scripts com "defer": rodam depois que a página carrega, nesta ordem (gráficos, painel, modo TV). -->
   <script src="/static/chart.umd.min.js" defer></script>
-  <script src="/static/app.js?v=20261113-1" defer></script>
+  <script src="/static/app.js?v=20261113-2" defer></script>
   <script src="/static/tv.js?v=20261113-1" defer></script>
 </head>
 <body>
@@ -159,7 +159,7 @@
           <div class="panel-head">
             <div>
               <p class="eyebrow">Dispositivos</p>
-              <h2 id="devices-title">Impressoras e antenas</h2>
+              <h2 id="devices-title">Impressoras, câmeras e antenas</h2>
             </div>
             <div class="panel-controls device-controls">
               <span class="device-summary" id="device-summary"></span>
@@ -341,6 +341,7 @@
         <span>Tipo</span>
         <select id="device-kind">
           <option value="impressora">Impressora</option>
+          <option value="camera">Câmera</option>
           <option value="antena">Antena</option>
           <option value="outro">Outro</option>
         </select>

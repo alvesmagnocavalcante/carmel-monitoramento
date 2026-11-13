@@ -44,7 +44,10 @@ const METRICS_CACHE_LIMIT = 24;
 // Bytes em 1 GB (1024 ao cubo), usado para converter tamanhos de memória e disco.
 const BYTES_PER_GB = 1024 ** 3;
 // Nomes amigáveis dos tipos de dispositivo, na forma em que a API os envia.
-const DEVICE_KIND_LABELS = { impressora: "Impressora", antena: "Antena", outro: "Outro" };
+const DEVICE_KIND_LABELS = { impressora: "Impressora", camera: "Câmera", antena: "Antena", outro: "Outro" };
+// Os mesmos tipos no plural, para os cabeçalhos de bloco da lista ("Magna · Câmeras"). A ordem das
+// chaves é a ordem em que os blocos aparecem dentro de cada grupo.
+const DEVICE_KIND_PLURALS = { impressora: "Impressoras", camera: "Câmeras", antena: "Antenas", outro: "Outros" };
 // Texto do selo de cada status de dispositivo ("unknown" = ainda sem leitura recente).
 const DEVICE_STATUS_LABELS = { up: "No ar", down: "Fora do ar", unknown: "Sem leitura" };
 // Ordem na tabela: o que está fora do ar vem primeiro, depois o sem leitura e por fim o que está no ar.
@@ -974,8 +977,8 @@ function deviceRow(device) {
   const name = document.createElement("strong");
   name.textContent = device.name;
   const meta = document.createElement("span");
-  meta.textContent = [DEVICE_KIND_LABELS[device.kind] || device.kind, device.group, deviceAddress(device)]
-    .filter(Boolean).join(" · ");
+  // Tipo e grupo já aparecem no cabeçalho do bloco; aqui fica só o endereço.
+  meta.textContent = deviceAddress(device);
   nameButton.append(name, meta);
   nameButton.addEventListener("click", () => openDeviceDialog(device));
 
@@ -998,18 +1001,64 @@ function deviceRow(device) {
   return row;
 }
 
+// Cabeçalho de um bloco da lista: "Magna · Câmeras" e "3 de 4 no ar". Se algum do bloco está fora do ar,
+// o contador ganha a cor de alerta para o problema aparecer sem precisar ler a tabela.
+function deviceGroupRow(devices) {
+  const first = devices[0];
+  const up = devices.filter((device) => device.status === "up").length;
+  const down = devices.filter((device) => device.status === "down").length;
+  const row = document.createElement("tr");
+  row.className = "device-group-row";
+  const cell = document.createElement("td");
+  cell.colSpan = 5;
+  const title = document.createElement("strong");
+  title.textContent = [first.group, DEVICE_KIND_PLURALS[first.kind] || first.kind].filter(Boolean).join(" · ");
+  const total = document.createElement("span");
+  total.textContent = `${up} de ${devices.length} no ar`;
+  if (down) total.classList.add("has-down");
+  cell.append(title, total);
+  row.append(cell);
+  return row;
+}
+
 // Redesenha o painel de dispositivos: resumo (no ar, fora do ar, sem leitura), tabela e estado vazio.
 // O painel nunca é escondido, para o botão "Adicionar dispositivo" continuar acessível sem cadastros.
 function renderDevices() {
+  const kindOrder = (device) => {
+    const index = Object.keys(DEVICE_KIND_PLURALS).indexOf(device.kind);
+    return index === -1 ? 99 : index;
+  };
+  // Ordem: grupo, depois tipo (impressoras, câmeras, antenas...); dentro do bloco, o que está fora do ar
+  // primeiro, depois sem leitura, depois no ar, e por fim o nome.
   const devices = [...state.devices].sort((left, right) =>
-    (DEVICE_STATUS_ORDER[left.status] ?? 1) - (DEVICE_STATUS_ORDER[right.status] ?? 1)
-    || (left.group || "").localeCompare(right.group || "", "pt-BR")
+    (left.group || "").localeCompare(right.group || "", "pt-BR")
+    || kindOrder(left) - kindOrder(right)
+    || (DEVICE_STATUS_ORDER[left.status] ?? 1) - (DEVICE_STATUS_ORDER[right.status] ?? 1)
     || left.name.localeCompare(right.name, "pt-BR"));
   const count = (status) => devices.filter((device) => device.status === status).length;
   elements.deviceSummary.textContent = devices.length
     ? `${count("up")} no ar · ${count("down")} fora do ar · ${count("unknown")} sem leitura`
     : "";
-  elements.deviceBody.replaceChildren(...devices.map(deviceRow));
+
+  // Uma linha de cabeçalho a cada mudança de grupo ou de tipo, com quantos do bloco estão no ar.
+  const rows = [];
+  let blockKey = null;
+  let block = [];
+  const closeBlock = () => {
+    if (block.length) rows.splice(rows.length - block.length, 0, deviceGroupRow(block));
+    block = [];
+  };
+  for (const device of devices) {
+    const key = `${device.group || ""}\u0000${device.kind}`;
+    if (key !== blockKey) {
+      closeBlock();
+      blockKey = key;
+    }
+    block.push(device);
+    rows.push(deviceRow(device));
+  }
+  closeBlock();
+  elements.deviceBody.replaceChildren(...rows);
   elements.deviceTableWrap.hidden = devices.length === 0;
   elements.deviceEmpty.hidden = devices.length > 0;
 }
