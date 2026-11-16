@@ -23,10 +23,10 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300..700&family=Cormorant:wght@400..700&display=swap">
-  <link rel="stylesheet" href="/static/styles.css?v=20261113-2">
+  <link rel="stylesheet" href="/static/styles.css?v=20261116-1">
   <!-- Scripts com "defer": rodam depois que a página carrega, nesta ordem (gráficos, painel, modo TV). -->
   <script src="/static/chart.umd.min.js" defer></script>
-  <script src="/static/app.js?v=20261113-2" defer></script>
+  <script src="/static/app.js?v=20261116-1" defer></script>
   <script src="/static/tv.js?v=20261113-1" defer></script>
 </head>
 <body>
@@ -43,6 +43,11 @@
           <h1>Monitoramento</h1>
         </div>
       </div>
+      <!-- Abas: "Máquinas" e "Dispositivos". O app.js troca a visão (data-view em .app) e marca a ativa. -->
+      <nav class="view-tabs" aria-label="Visões do painel">
+        <button type="button" class="pill-button view-tab active" data-view="hosts" aria-pressed="true">Máquinas</button>
+        <button type="button" class="pill-button view-tab" data-view="devices" aria-pressed="false">Dispositivos</button>
+      </nav>
       <div class="topbar-actions">
         <button type="button" class="pill-button" id="tv-toggle" aria-label="Abrir o modo apresentação (tela cheia)">
           <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/></svg>
@@ -88,7 +93,7 @@
         </section>
 
         <!-- Lista de máquinas: seletor de grupo, busca, filtro por status, tabela e paginação. -->
-        <section class="panel" aria-labelledby="agents-title">
+        <section class="panel hosts-panel" aria-labelledby="agents-title">
           <div class="panel-head">
             <div>
               <p class="eyebrow">Visão geral</p>

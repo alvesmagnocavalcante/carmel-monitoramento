@@ -329,6 +329,17 @@ html.theme-fading .logo { animation: fade-in 350ms ease; }
   .layout.has-details .host-table td { padding-inline: 8px; }
 }
 
+/* ---------- Abas (Máquinas / Dispositivos) ---------- */
+.view-tabs { display: flex; gap: 8px; margin-left: auto; margin-right: 12px; }
+/* Cada visão esconde o que é da outra. Na de dispositivos não há resumo de máquinas, tabela de hosts
+   nem painel de histórico (a grade volta a uma coluna e o painel de dispositivos não leva espaço extra em cima). */
+.app[data-view="hosts"] .device-panel { display: none; }
+.app[data-view="devices"] .stats,
+.app[data-view="devices"] .hosts-panel,
+.app[data-view="devices"] .details { display: none; }
+.app[data-view="devices"] .layout.has-details { grid-template-columns: minmax(0, 1fr); }
+.app[data-view="devices"] .panel + .device-panel { margin-top: 0; }
+
 /* ---------- Painel de dispositivos ---------- */
 /* Segundo painel dentro da coluna principal: o espaço de cima separa-o do painel de hosts. */
 .panel + .device-panel { margin-top: 24px; }
@@ -483,7 +494,12 @@ html.theme-fading .logo { animation: fade-in 350ms ease; }
 @media (max-width: 760px) {
   .brand-title .eyebrow { display: none; }
   .app { padding: 0 16px 28px; }
-  .topbar { min-height: 72px; }
+  .topbar { min-height: 72px; flex-wrap: wrap; gap: 0 10px; }
+  .brand { min-width: 0; }
+  .topbar-actions { margin-left: auto; }
+  /* As abas passam para uma linha própria, com os dois botões dividindo a largura. */
+  .view-tabs { order: 3; flex: 0 0 100%; margin: 0 0 14px; }
+  .view-tab { flex: 1; justify-content: center; height: 38px; }
   .brand { gap: 14px; }
   .logo { width: 96px; height: 34px; }
   .brand-divider { height: 28px; }

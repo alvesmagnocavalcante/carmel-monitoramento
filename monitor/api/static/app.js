@@ -1333,11 +1333,48 @@ elements.deviceDelete.addEventListener("click", () => {
 elements.deviceClose.addEventListener("click", () => elements.deviceDialog.close());
 elements.deviceCancel.addEventListener("click", () => elements.deviceDialog.close());
 
+// Visões da página: "Máquinas" (padrão) e "Dispositivos" (impressoras, câmeras, antenas). É a mesma
+// página; o CSS esconde o que não pertence à visão ativa (data-view em .app). O endereço
+// "/#dispositivos" abre direto na segunda visão, e os botões Voltar/Avançar do navegador funcionam.
+const VIEW_HASH = "#dispositivos";
+
+function viewFromHash() {
+  return window.location.hash === VIEW_HASH ? "devices" : "hosts";
+}
+
+function setView(view) {
+  document.querySelector(".app").dataset.view = view;
+  document.querySelectorAll(".view-tab").forEach((tab) => {
+    const active = tab.dataset.view === view;
+    tab.classList.toggle("active", active);
+    tab.setAttribute("aria-pressed", String(active));
+  });
+  // O histórico de um host não aparece na visão de dispositivos: fecha o painel se estava aberto.
+  if (view === "devices" && state.selectedAgentId) closeDetails();
+}
+
+document.querySelectorAll(".view-tab").forEach((tab) => {
+  tab.addEventListener("click", () => {
+    const view = tab.dataset.view;
+    if (view === viewFromHash()) return;
+    if (view === "devices") {
+      window.location.hash = VIEW_HASH; // dispara "hashchange", que troca a visão
+    } else {
+      // Sem "#": remove o hash sem recarregar nem rolar a página.
+      history.pushState(null, "", window.location.pathname + window.location.search);
+      setView("hosts");
+    }
+  });
+});
+window.addEventListener("hashchange", () => setView(viewFromHash()));
+window.addEventListener("popstate", () => setView(viewFromHash()));
+
 // Inicialização, quando a página termina de carregar: cria os gráficos, marca a ordenação inicial,
 // busca os dados e agenda a atualização periódica. Ao voltar para a aba (visibilitychange), atualiza
 // na hora, pois refresh() ignora chamadas enquanto a aba está escondida.
 window.addEventListener("DOMContentLoaded", () => {
   initializeCharts();
+  setView(viewFromHash());
   updateSortIndicators();
   // Mostra já o estado vazio do painel de dispositivos (e não uma tabela sem linhas) enquanto a API não responde.
   renderDevices();
