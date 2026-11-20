@@ -357,10 +357,15 @@ html.theme-fading .logo { animation: fade-in 350ms ease; }
 /* Valores simples (resposta, desde, servidor): texto discreto, números alinhados em colunas. */
 .device-value { color: var(--ink-soft); font-size: 13px; font-weight: 500; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 /* Cabeçalho de cada bloco da lista (grupo · tipo, com "N de M no ar"). */
-.device-group-row td { padding: 18px 12px 8px; border-bottom: 1px solid var(--line); background: transparent; }
-.device-group-row td > strong { font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink); }
-.device-group-row td > span { margin-left: 12px; font-family: var(--sans); font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
-.device-group-row td > span.has-down { color: var(--offline); font-weight: 600; }
+/* Mesmo destaque dos grupos em Máquinas (.group-header): título na cor de acento com espaçamento largo e
+   contador em pílula. Fica .has-down (terracota) quando algum do bloco está fora do ar. */
+.host-table tbody .device-group-row,
+.host-table tbody .device-group-row:hover { background: transparent; cursor: default; }
+.host-table tbody .device-group-row td { padding: 22px 14px 8px; border-bottom: 0; }
+.host-table tbody .device-group-row:first-child td { padding-top: 8px; }
+.device-group-row td > strong { color: var(--accent-text); font-size: 12px; font-weight: 600; letter-spacing: 3px; text-transform: uppercase; }
+.device-group-row td > span { margin-left: 10px; padding: 1px 9px; color: var(--muted); font-family: var(--sans); font-size: 11px; font-weight: 600; font-variant-numeric: tabular-nums; border: 1px solid var(--line); border-radius: 999px; }
+.device-group-row td > span.has-down { color: var(--offline); border-color: var(--offline); }
 /* No estado vazio o aviso é só uma linha, então precisa de menos folga que o da lista de hosts. */
 .device-empty { padding: 28px 20px; }
 
@@ -588,7 +593,7 @@ html.theme-fading .logo { animation: fade-in 350ms ease; }
   }
   /* O cabeçalho de bloco não é um card: ocupa a largura toda, sem borda nem fundo de card. */
   .device-table tbody tr.device-group-row { display: block; padding: 0; border: 0; background: transparent; box-shadow: none; }
-  .device-group-row td { display: block; padding: 14px 4px 6px; }
+  .host-table tbody .device-group-row td { display: block; padding: 14px 2px 2px; }
   .host-table td.c-dev { grid-area: dev; }
   .host-table td.c-dstatus { grid-area: dstatus; justify-self: end; }
   .host-table td.c-dresp { grid-area: dresp; }
