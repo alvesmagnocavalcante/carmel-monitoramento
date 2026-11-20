@@ -333,8 +333,9 @@ html.theme-fading .logo { animation: fade-in 350ms ease; }
 .view-tabs { display: flex; gap: 8px; margin-left: auto; margin-right: 12px; }
 /* Cada visão esconde o que é da outra. Na de dispositivos não há resumo de máquinas, tabela de hosts
    nem painel de histórico (a grade volta a uma coluna e o painel de dispositivos não leva espaço extra em cima). */
-.app[data-view="hosts"] .device-panel { display: none; }
-.app[data-view="devices"] .stats,
+.app[data-view="hosts"] .device-panel,
+.app[data-view="hosts"] .device-stats { display: none; }
+.app[data-view="devices"] .stats:not(.device-stats),
 .app[data-view="devices"] .hosts-panel,
 .app[data-view="devices"] .details { display: none; }
 .app[data-view="devices"] .layout.has-details { grid-template-columns: minmax(0, 1fr); }
@@ -681,6 +682,18 @@ body.tv-active .app { display: none; }
   50% { box-shadow: 0 0 1.1em 0.1em color-mix(in srgb, var(--offline) 60%, transparent); }
 }
 .tv-tile.alert { border-color: var(--offline); animation: tv-alert-pulse 2s ease-in-out infinite; }
+/* Cartão de dispositivo: mesmas medidas do de máquina. Fora do ar = terracota (pulsa, via .alert);
+   sem leitura = apagado e sem pulso; no ar = padrão. */
+.tv-tile.device.down { border-color: var(--offline); background: color-mix(in srgb, var(--offline) 11%, var(--card)); }
+.tv-tile.device.down .tv-dot { background: var(--offline); }
+.tv-tile.device.unknown { opacity: 0.7; }
+.tv-tile.device.unknown .tv-dot { background: var(--muted); }
+.tv-flag-kind { color: var(--muted); }
+.tv-device-main { align-self: center; display: flex; align-items: baseline; justify-content: space-between; gap: 0.6em; }
+.tv-device-state { color: var(--online); font-size: 0.95em; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; }
+.tv-tile.device.down .tv-device-state { color: var(--offline); }
+.tv-tile.device.unknown .tv-device-state { color: var(--muted); }
+.tv-device-latency { color: var(--ink); font-family: var(--serif); font-size: 1.4em; font-weight: 600; line-height: 1; font-variant-numeric: lining-nums tabular-nums; }
 .tv-tile-head { display: flex; align-items: center; gap: 0.6em; min-width: 0; }
 .tv-tile-head strong { flex: 1; min-width: 0; overflow: hidden; color: var(--ink); font-size: 1.1em; text-overflow: ellipsis; white-space: nowrap; }
 .tv-dot { flex: none; width: 0.6em; height: 0.6em; border-radius: 50%; background: var(--online); }

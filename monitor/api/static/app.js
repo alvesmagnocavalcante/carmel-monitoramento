@@ -134,6 +134,12 @@ const elements = {
   deviceTableWrap: document.querySelector("#device-table-wrap"),
   deviceEmpty: document.querySelector("#device-empty"),
   deviceSummary: document.querySelector("#device-summary"),
+  totalDevices: document.querySelector("#total-devices"),
+  totalDevicesNote: document.querySelector("#total-devices-note"),
+  upDevices: document.querySelector("#up-devices"),
+  upDevicesShare: document.querySelector("#up-devices-share"),
+  downDevices: document.querySelector("#down-devices"),
+  downDevicesShare: document.querySelector("#down-devices-share"),
   addDevice: document.querySelector("#add-device"),
   deviceDialog: document.querySelector("#device-dialog"),
   deviceForm: document.querySelector("#device-form"),
@@ -1039,6 +1045,17 @@ function renderDevices() {
   elements.deviceSummary.textContent = devices.length
     ? `${count("up")} no ar · ${count("down")} fora do ar · ${count("unknown")} sem leitura`
     : "";
+  // Cartões de resumo (mesmo desenho dos de máquinas). "Sem leitura" não ganha cartão: aparece como nota no total.
+  const up = count("up");
+  const down = count("down");
+  const unknown = count("unknown");
+  const share = (amount) => `${Math.round((amount / devices.length) * 100)}% dos dispositivos`;
+  elements.totalDevices.textContent = devices.length;
+  elements.totalDevicesNote.textContent = unknown ? `${unknown} sem leitura` : "";
+  elements.upDevices.textContent = up;
+  elements.downDevices.textContent = down;
+  elements.upDevicesShare.textContent = devices.length ? share(up) : "";
+  elements.downDevicesShare.textContent = !devices.length ? "" : down ? share(down) : "nenhum parado";
 
   // Uma linha de cabeçalho a cada mudança de grupo ou de tipo, com quantos do bloco estão no ar.
   const rows = [];

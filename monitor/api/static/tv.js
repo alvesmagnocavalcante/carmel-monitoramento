@@ -128,25 +128,72 @@ function tvTile(agent) {
   return tile;
 }
 
-// Monta a seção de um grupo: título com a quantidade de máquinas, a posição na rotação (ex.: 2/5,
-// só quando está rotacionando) e a grade de cartões.
-function tvGroupSection(name, agents, position) {
+// Monta o cartão de um dispositivo (impressora, antena...). Mesmo tamanho do cartão de máquina, para o
+// cálculo de encaixe (tvFit) valer para os dois: cabeçalho (nome e etiqueta), situação e tempo de resposta
+// no meio, e rodapé com endereço e há quanto tempo está nesse estado. down = fora do ar (pulsa),
+// unknown = sem leitura (apagado, não pulsa), up = no ar.
+function tvDeviceTile(device) {
+  const tile = document.createElement("article");
+  tile.className = `tv-tile device ${device.status}${device.status === "down" ? " alert" : ""}`;
+
+  const head = document.createElement("div");
+  head.className = "tv-tile-head";
+  const dot = document.createElement("span");
+  dot.className = "tv-dot";
+  const name = document.createElement("strong");
+  name.textContent = device.name;
+  name.title = device.name;
+  head.append(dot, name);
+  const kind = DEVICE_KIND_PLURALS[device.kind];
+  if (kind) {
+    const flag = document.createElement("span");
+    flag.className = "tv-flag tv-flag-kind";
+    flag.textContent = kind;
+    head.append(flag);
+  }
+
+  const middle = document.createElement("div");
+  middle.className = "tv-device-main";
+  const situation = document.createElement("span");
+  situation.className = "tv-device-state";
+  situation.textContent = DEVICE_STATUS_LABELS[device.status] || device.status;
+  const latency = document.createElement("span");
+  latency.className = "tv-device-latency";
+  latency.textContent = Number.isFinite(device.latency_ms) ? `${formatDecimal(device.latency_ms)} ms` : "—";
+  middle.append(situation, latency);
+
+  const foot = document.createElement("div");
+  foot.className = "tv-foot";
+  const address = document.createElement("span");
+  address.textContent = deviceAddress(device);
+  const since = document.createElement("span");
+  since.textContent = deviceSinceText(device);
+  foot.append(address, since);
+
+  tile.append(head, middle, foot);
+  return tile;
+}
+
+// Monta a seção de uma tela: título (grupo, mais "Dispositivos" quando é a tela de dispositivos),
+// a quantidade de itens, a posição na rotação (ex.: 2/5, só quando está rotacionando) e a grade de
+// cartões. `tile` é a função que cria cada cartão (tvTile para máquinas, tvDeviceTile para dispositivos).
+function tvGroupSection(title, items, tile, position) {
   const section = document.createElement("section");
   section.className = "tv-group";
-  const title = document.createElement("h3");
-  title.textContent = name || "Sem grupo";
+  const heading = document.createElement("h3");
+  heading.textContent = title;
   const count = document.createElement("span");
-  count.textContent = agents.length;
-  title.append(count);
+  count.textContent = items.length;
+  heading.append(count);
   if (position) {
     const page = document.createElement("em");
     page.textContent = position;
-    title.append(page);
+    heading.append(page);
   }
   const grid = document.createElement("div");
   grid.className = "tv-grid";
-  grid.append(...agents.map(tvTile));
-  section.append(title, grid);
+  grid.append(...items.map(tile));
+  section.append(heading, grid);
   return section;
 }
 
@@ -185,6 +232,37 @@ function renderTvDevices() {
   tv.devicesKpi.classList.toggle("alert", down > 0);
 }
 
+// Dispositivos do grupo escolhido (todos, se nenhum), com o que está fora do ar primeiro, depois sem
+// leitura, depois no ar, e por fim o nome (mesma ordem da lista do painel).
+function tvDevicesByGroup() {
+  const devices = state.selectedGroup === "all"
+    ? state.devices
+    : state.devices.filter((device) => device.group === state.selectedGroup);
+  const groups = new Map();
+  devices.forEach((device) => groups.set(device.group, [...(groups.get(device.group) || []), device]));
+  groups.forEach((members) => members.sort((a, b) =>
+    (DEVICE_STATUS_ORDER[a.status] ?? 1) - (DEVICE_STATUS_ORDER[b.status] ?? 1)
+    || a.name.localeCompare(b.name, "pt-BR")));
+  return groups;
+}
+
+// Telas da rotação: para cada grupo (por nome), a tela das máquinas e, depois, a dos dispositivos.
+// Grupo sem máquinas ou sem dispositivos simplesmente não gera a tela que não tem.
+// `ordered` = [[grupo, máquinas]] já ordenado.
+function tvSlides(ordered) {
+  const machines = new Map(ordered);
+  const devices = tvDevicesByGroup();
+  const names = [...new Set([...machines.keys(), ...devices.keys()])]
+    .sort((a, b) => (a || "").localeCompare(b || "", "pt-BR"));
+  return names.flatMap((name) => {
+    const label = name || "Sem grupo";
+    const slides = [];
+    if (machines.has(name)) slides.push({ title: `${label} · Máquinas`, items: machines.get(name), tile: tvTile });
+    if (devices.has(name)) slides.push({ title: `${label} · Dispositivos`, items: devices.get(name), tile: tvDeviceTile });
+    return slides;
+  });
+}
+
 // Redesenha a tela inteira do modo apresentação: contadores do topo, grupos ordenados e cartões.
 // Chamada a cada atualização de dados, a cada troca de grupo da rotação e ao redimensionar a janela.
 function renderTv() {
@@ -207,23 +285,26 @@ function renderTv() {
   ordered.forEach(([, members]) => members.sort((a, b) =>
     tvPriority(a) - tvPriority(b) || a.name.localeCompare(b.name, "pt-BR")));
 
-  if (!ordered.length) {
+  // Em rotação, mostra uma tela por vez (fonte bem maior); senão, todos os grupos de máquinas juntos.
+  // Na rotação, cada grupo gera uma tela de máquinas seguida de uma de dispositivos (quando o grupo os
+  // tem): as duas coisas se alternam, mas nunca dividem a mesma tela.
+  const slides = tv.rotation > 0 ? tvSlides(ordered) : ordered.map(([name, members]) =>
+    ({ title: name || "Sem grupo", items: members, tile: tvTile }));
+  if (!slides.length) {
     const empty = document.createElement("p");
     empty.className = "tv-empty";
     empty.textContent = "Nenhuma máquina para exibir.";
     tv.body.replaceChildren(empty);
     return;
   }
-
-  // Em rotação, mostra um grupo por vez (fonte bem maior); senão, todos juntos.
-  const rotating = tv.rotation > 0 && ordered.length > 1;
-  if (rotating) tv.rotationIndex %= ordered.length;
-  const visible = rotating ? [ordered[tv.rotationIndex]] : ordered;
-  tv.body.replaceChildren(...visible.map(([name, members]) =>
-    tvGroupSection(name, members, rotating ? `${tv.rotationIndex + 1}/${ordered.length}` : "")));
+  const rotating = tv.rotation > 0 && slides.length > 1;
+  if (rotating) tv.rotationIndex %= slides.length;
+  const visible = rotating ? [slides[tv.rotationIndex]] : slides;
+  tv.body.replaceChildren(...visible.map((slide) =>
+    tvGroupSection(slide.title, slide.items, slide.tile, rotating ? `${tv.rotationIndex + 1}/${slides.length}` : "")));
   // Entrega ao CSS o tamanho da fonte e a folga de altura calculados (variáveis --tv-font e --tv-extra).
   // Precisa vir depois de inserir os grupos, pois tvFit lê o tamanho real da área.
-  const { font, extra } = tvFit(visible.map(([, members]) => members.length));
+  const { font, extra } = tvFit(visible.map((slide) => slide.items.length));
   tv.body.style.setProperty("--tv-font", `${font}px`);
   tv.body.style.setProperty("--tv-extra", `${Math.round(extra)}px`);
 }
