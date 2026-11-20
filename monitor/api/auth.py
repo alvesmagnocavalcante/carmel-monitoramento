@@ -1,8 +1,8 @@
 """Autenticação da API.
 
-Existe uma única chave secreta, a variável de ambiente AGENT_TOKEN. Ela é usada de duas formas:
-  - pelos agentes, no cabeçalho "Authorization: Bearer <token>", para enviar heartbeats;
-  - pelo painel, no cabeçalho "X-Management-Key", para editar ou excluir um host.
+Há dois segredos separados:
+  - AGENT_TOKEN: usado pelos agentes, no cabeçalho "Authorization: Bearer <token>", para enviar heartbeats;
+  - MANAGEMENT_PASSWORD: a senha do painel, enviada no cabeçalho "X-Management-Key", para editar ou excluir um host.
 A consulta dos dados (lista de hosts e histórico) é pública e não passa por aqui.
 """
 
@@ -19,17 +19,19 @@ def _digest(value: str) -> bytes:
     return hashlib.sha256(value.encode("utf-8")).digest()
 
 
-def _verify(provided: str | None, headers: dict[str, str] | None = None) -> None:
-    """Confere a chave recebida com a configurada; levanta erro HTTP se não bater.
+def _verify(
+    provided: str | None, env_var: str, headers: dict[str, str] | None = None
+) -> None:
+    """Confere o valor recebido com o configurado em `env_var`; levanta erro HTTP se não bater.
 
-    503 = a API foi publicada sem AGENT_TOKEN (erro de configuração, não do cliente).
-    401 = chave ausente ou errada. `headers` entra na resposta 401 (ex.: WWW-Authenticate).
+    503 = a API foi publicada sem a variável (erro de configuração, não do cliente).
+    401 = valor ausente ou errado. `headers` entra na resposta 401 (ex.: WWW-Authenticate).
     """
-    configured = os.getenv("AGENT_TOKEN")
+    configured = os.getenv(env_var)
     if not configured:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="AGENT_TOKEN is not configured",
+            detail=f"{env_var} is not configured",
         )
     # compare_digest evita "timing attacks": uma comparação comum termina mais cedo
     # quando as primeiras letras erram, o que permitiria descobrir a chave aos poucos.
@@ -45,9 +47,9 @@ def require_agent_token(authorization: str | None = Header(default=None)) -> Non
     """Dependência das rotas dos agentes: exige "Authorization: Bearer <AGENT_TOKEN>"."""
     # O cabeçalho vem como "Bearer abc123": separa a palavra "Bearer" do token.
     scheme, _, token = (authorization or "").partition(" ")
-    _verify(token if scheme.lower() == "bearer" else None, {"WWW-Authenticate": "Bearer"})
+    _verify(token if scheme.lower() == "bearer" else None, "AGENT_TOKEN", {"WWW-Authenticate": "Bearer"})
 
 
 def require_management_key(x_management_key: str | None = Header(default=None)) -> None:
-    """Dependência das rotas de gestão (editar/excluir host): exige o cabeçalho X-Management-Key."""
-    _verify(x_management_key)
+    """Dependência das rotas de gestão (editar/excluir host): exige a senha em X-Management-Key."""
+    _verify(x_management_key, "MANAGEMENT_PASSWORD")

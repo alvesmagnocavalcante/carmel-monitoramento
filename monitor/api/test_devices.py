@@ -183,6 +183,7 @@ class DeviceRoutesTests(unittest.TestCase):
             environment = {
                 "DATABASE_PATH": str(Path(directory) / "api.db"),
                 "AGENT_TOKEN": "token-de-teste",
+                "MANAGEMENT_PASSWORD": "senha-de-teste",
                 "TURSO_DATABASE_URL": "",
                 "TURSO_AUTH_TOKEN": "",
             }
@@ -190,7 +191,7 @@ class DeviceRoutesTests(unittest.TestCase):
                 sys.modules.pop("main", None)
                 main = importlib.import_module("main")
                 agent = {"Authorization": "Bearer token-de-teste"}
-                manager = {"X-Management-Key": "token-de-teste"}
+                manager = {"X-Management-Key": "senha-de-teste"}
                 with TestClient(main.app) as client:
                     main.database.record_heartbeat(PROBE_HEARTBEAT)
                     body = new_device()

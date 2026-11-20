@@ -884,7 +884,7 @@ async function managementRequest(url, options) {
   let key = sessionStorage.getItem("managementKey");
   if (!key) {
     key = window.prompt(
-      "Cole o token do config.json do agente. Ele será solicitado apenas uma vez neste navegador:",
+      "Digite a senha de gestão. Ela será solicitada apenas uma vez neste navegador:",
     );
     if (!key) return null;
     key = key.trim();
@@ -903,7 +903,7 @@ async function managementRequest(url, options) {
   // 401 = chave recusada: esquece a chave guardada para ela ser pedida de novo na próxima tentativa.
   if (response.status === 401) {
     sessionStorage.removeItem("managementKey");
-    window.alert("Token inválido. Copie o campo token do config.json do agente.");
+    window.alert("Senha incorreta.");
     return null;
   }
   if (!response.ok) {
