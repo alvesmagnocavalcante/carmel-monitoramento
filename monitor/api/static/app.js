@@ -1048,7 +1048,20 @@ function renderDevices() {
   elements.deviceSummary.textContent = state.devices.length
     ? `${count("up")} no ar · ${count("down")} fora do ar · ${count("unknown")} sem leitura`
     : "";
-<<<<<<< HEAD
+  // Cartões de resumo (mesmo desenho dos de máquinas). Contam TODOS os dispositivos, sem os filtros.
+  // "Sem leitura" não ganha cartão: aparece como nota no total.
+  const total = state.devices.length;
+  const up = count("up");
+  const down = count("down");
+  const unknown = count("unknown");
+  const share = (amount) => `${Math.round((amount / total) * 100)}% dos dispositivos`;
+  elements.totalDevices.textContent = total;
+  elements.totalDevicesNote.textContent = unknown ? `${unknown} sem leitura` : "";
+  elements.upDevices.textContent = up;
+  elements.downDevices.textContent = down;
+  elements.upDevicesShare.textContent = total ? share(up) : "";
+  elements.downDevicesShare.textContent = !total ? "" : down ? share(down) : "nenhum parado";
+
   syncDeviceGroupFilter();
   elements.deviceToolbar.hidden = state.devices.length === 0;
 
@@ -1066,19 +1079,6 @@ function renderDevices() {
       || kindOrder(left) - kindOrder(right)
       || (DEVICE_STATUS_ORDER[left.status] ?? 1) - (DEVICE_STATUS_ORDER[right.status] ?? 1)
       || left.name.localeCompare(right.name, "pt-BR"));
-=======
-  // Cartões de resumo (mesmo desenho dos de máquinas). "Sem leitura" não ganha cartão: aparece como nota no total.
-  const up = count("up");
-  const down = count("down");
-  const unknown = count("unknown");
-  const share = (amount) => `${Math.round((amount / devices.length) * 100)}% dos dispositivos`;
-  elements.totalDevices.textContent = devices.length;
-  elements.totalDevicesNote.textContent = unknown ? `${unknown} sem leitura` : "";
-  elements.upDevices.textContent = up;
-  elements.downDevices.textContent = down;
-  elements.upDevicesShare.textContent = devices.length ? share(up) : "";
-  elements.downDevicesShare.textContent = !devices.length ? "" : down ? share(down) : "nenhum parado";
->>>>>>> 561e345ff1775052e83e1c764f57da172f71ca2e
 
   // Uma linha de cabeçalho a cada mudança de grupo ou de tipo, com quantos do bloco estão no ar.
   const rows = [];

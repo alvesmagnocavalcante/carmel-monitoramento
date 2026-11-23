@@ -362,12 +362,6 @@ html.theme-fading .logo { animation: fade-in 350ms ease; }
 .device-toolbar[hidden] { display: none; }
 .device-toolbar .search-field { min-width: 220px; }
 /* Cabeçalho de cada bloco da lista (grupo · tipo, com "N de M no ar"). */
-<<<<<<< HEAD
-.device-group-row td { padding: 18px 12px 8px; border-bottom: 1px solid var(--line); background: transparent; }
-.device-group-row td > strong { font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink); }
-.device-group-row td > span { margin-left: 12px; font-family: var(--sans); font-size: 12px; color: var(--muted); font-variant-numeric: normal; }
-.device-group-row td > span.has-down { color: var(--offline); font-weight: 600; }
-=======
 /* Mesmo destaque dos grupos em Máquinas (.group-header): título na cor de acento com espaçamento largo e
    contador em pílula. Fica .has-down (terracota) quando algum do bloco está fora do ar. */
 .host-table tbody .device-group-row,
@@ -377,7 +371,6 @@ html.theme-fading .logo { animation: fade-in 350ms ease; }
 .device-group-row td > strong { color: var(--accent-text); font-size: 12px; font-weight: 600; letter-spacing: 3px; text-transform: uppercase; }
 .device-group-row td > span { margin-left: 10px; padding: 1px 9px; color: var(--muted); font-family: var(--sans); font-size: 11px; font-weight: 600; font-variant-numeric: tabular-nums; border: 1px solid var(--line); border-radius: 999px; }
 .device-group-row td > span.has-down { color: var(--offline); border-color: var(--offline); }
->>>>>>> 561e345ff1775052e83e1c764f57da172f71ca2e
 /* No estado vazio o aviso é só uma linha, então precisa de menos folga que o da lista de hosts. */
 .device-empty { padding: 28px 20px; }
 
