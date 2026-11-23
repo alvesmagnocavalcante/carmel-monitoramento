@@ -67,6 +67,8 @@ const state = {
   agents: [],
   // Lista de dispositivos (impressoras, antenas...) devolvida por /api/devices; também lida pelo tv.js.
   devices: [],
+  // Filtros da visão de dispositivos ("all" = sem filtro).
+  deviceFilter: { search: "", group: "all", kind: "all", status: "all" },
   // Id do host aberto no painel lateral (null = painel fechado).
   selectedAgentId: null,
   // Grupo (hotel) escolhido no filtro; "all" = todos.
@@ -133,6 +135,11 @@ const elements = {
   deviceBody: document.querySelector("#device-table-body"),
   deviceTableWrap: document.querySelector("#device-table-wrap"),
   deviceEmpty: document.querySelector("#device-empty"),
+  deviceToolbar: document.querySelector("#device-toolbar"),
+  deviceSearch: document.querySelector("#device-search"),
+  deviceGroupFilter: document.querySelector("#device-group-filter"),
+  deviceKindFilter: document.querySelector("#device-kind-filter"),
+  deviceStatusChips: document.querySelectorAll("#device-status-chips .chip"),
   deviceSummary: document.querySelector("#device-summary"),
   addDevice: document.querySelector("#add-device"),
   deviceDialog: document.querySelector("#device-dialog"),
@@ -1030,15 +1037,28 @@ function renderDevices() {
   };
   // Ordem: grupo, depois tipo (impressoras, câmeras, antenas...); dentro do bloco, o que está fora do ar
   // primeiro, depois sem leitura, depois no ar, e por fim o nome.
-  const devices = [...state.devices].sort((left, right) =>
-    (left.group || "").localeCompare(right.group || "", "pt-BR")
-    || kindOrder(left) - kindOrder(right)
-    || (DEVICE_STATUS_ORDER[left.status] ?? 1) - (DEVICE_STATUS_ORDER[right.status] ?? 1)
-    || left.name.localeCompare(right.name, "pt-BR"));
-  const count = (status) => devices.filter((device) => device.status === status).length;
-  elements.deviceSummary.textContent = devices.length
+  // O resumo do topo conta TODOS os dispositivos; os filtros só mudam o que a tabela mostra.
+  const count = (status) => state.devices.filter((device) => device.status === status).length;
+  elements.deviceSummary.textContent = state.devices.length
     ? `${count("up")} no ar · ${count("down")} fora do ar · ${count("unknown")} sem leitura`
     : "";
+  syncDeviceGroupFilter();
+  elements.deviceToolbar.hidden = state.devices.length === 0;
+
+  const filter = state.deviceFilter;
+  const query = filter.search.toLocaleLowerCase("pt-BR");
+  const devices = state.devices
+    .filter((device) => filter.group === "all" || (device.group || "") === filter.group)
+    .filter((device) => filter.kind === "all" || device.kind === filter.kind)
+    .filter((device) => filter.status === "all" || device.status === filter.status)
+    // A busca olha o nome, o endereço e o servidor que faz o ping.
+    .filter((device) => !query
+      || [device.name, device.address, device.probe_name].some((text) => (text || "").toLocaleLowerCase("pt-BR").includes(query)))
+    .sort((left, right) =>
+      (left.group || "").localeCompare(right.group || "", "pt-BR")
+      || kindOrder(left) - kindOrder(right)
+      || (DEVICE_STATUS_ORDER[left.status] ?? 1) - (DEVICE_STATUS_ORDER[right.status] ?? 1)
+      || left.name.localeCompare(right.name, "pt-BR"));
 
   // Uma linha de cabeçalho a cada mudança de grupo ou de tipo, com quantos do bloco estão no ar.
   const rows = [];
@@ -1061,6 +1081,24 @@ function renderDevices() {
   elements.deviceBody.replaceChildren(...rows);
   elements.deviceTableWrap.hidden = devices.length === 0;
   elements.deviceEmpty.hidden = devices.length > 0;
+  // Dois motivos para a lista estar vazia: nada cadastrado, ou os filtros não encontraram nada.
+  elements.deviceEmpty.querySelector("strong").textContent = state.devices.length
+    ? "Nenhum dispositivo encontrado."
+    : "Nenhum dispositivo cadastrado.";
+}
+
+// Mantém as opções do filtro de grupo iguais aos grupos dos dispositivos cadastrados. Só reconstrói quando
+// a lista de grupos muda (a tela é atualizada a cada 30 s e trocar as opções fecharia o menu aberto).
+function syncDeviceGroupFilter() {
+  const groups = [...new Set(state.devices.map((device) => device.group || "").filter(Boolean))]
+    .sort((left, right) => left.localeCompare(right, "pt-BR"));
+  const signature = groups.join("\u0000");
+  if (elements.deviceGroupFilter.dataset.signature === signature) return;
+  elements.deviceGroupFilter.dataset.signature = signature;
+  elements.deviceGroupFilter.replaceChildren(new Option("Todos os grupos", "all"), ...groups.map((group) => new Option(group, group)));
+  // Se o grupo escolhido deixou de existir (ex.: o último dispositivo dele foi excluído), volta para todos.
+  if (!groups.includes(state.deviceFilter.group)) state.deviceFilter.group = "all";
+  elements.deviceGroupFilter.value = state.deviceFilter.group;
 }
 
 // Busca a lista de dispositivos. Falhas são tratadas aqui mesmo e NÃO propagam: um problema nesta
@@ -1267,6 +1305,26 @@ elements.search.addEventListener("input", () => {
   state.search = elements.search.value.trim();
   state.page = 1;
   renderHosts();
+});
+// Filtros da visão de dispositivos: busca, grupo, tipo e status (mesmo funcionamento dos filtros de hosts).
+elements.deviceSearch.addEventListener("input", () => {
+  state.deviceFilter.search = elements.deviceSearch.value.trim();
+  renderDevices();
+});
+elements.deviceGroupFilter.addEventListener("change", () => {
+  state.deviceFilter.group = elements.deviceGroupFilter.value;
+  renderDevices();
+});
+elements.deviceKindFilter.addEventListener("change", () => {
+  state.deviceFilter.kind = elements.deviceKindFilter.value;
+  renderDevices();
+});
+elements.deviceStatusChips.forEach((chip) => {
+  chip.addEventListener("click", () => {
+    state.deviceFilter.status = chip.dataset.status;
+    elements.deviceStatusChips.forEach((item) => item.classList.toggle("active", item === chip));
+    renderDevices();
+  });
 });
 // Paginação. O limite superior da página é corrigido dentro de renderHosts.
 elements.previousPage.addEventListener("click", () => {

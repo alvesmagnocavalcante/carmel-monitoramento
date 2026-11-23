@@ -23,10 +23,10 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300..700&family=Cormorant:wght@400..700&display=swap">
-  <link rel="stylesheet" href="/static/styles.css?v=20261116-1">
+  <link rel="stylesheet" href="/static/styles.css?v=20261123-1">
   <!-- Scripts com "defer": rodam depois que a página carrega, nesta ordem (gráficos, painel, modo TV). -->
   <script src="/static/chart.umd.min.js" defer></script>
-  <script src="/static/app.js?v=20261116-1" defer></script>
+  <script src="/static/app.js?v=20261123-1" defer></script>
   <script src="/static/tv.js?v=20261113-1" defer></script>
 </head>
 <body>
@@ -169,6 +169,35 @@
             <div class="panel-controls device-controls">
               <span class="device-summary" id="device-summary"></span>
               <button type="button" class="primary-button device-add" id="add-device">Adicionar dispositivo</button>
+            </div>
+          </div>
+
+          <!-- Filtros: busca (nome, endereço ou servidor), grupo, tipo e status. Escondidos sem dispositivos. -->
+          <div class="toolbar device-toolbar" id="device-toolbar" hidden>
+            <label class="search-field">
+              <span class="sr-only">Buscar dispositivo</span>
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+              <input id="device-search" type="search" placeholder="Buscar por nome ou IP..." autocomplete="off">
+            </label>
+            <label class="select-field">
+              <span class="sr-only">Grupo</span>
+              <select id="device-group-filter"><option value="all">Todos os grupos</option></select>
+            </label>
+            <label class="select-field">
+              <span class="sr-only">Tipo</span>
+              <select id="device-kind-filter">
+                <option value="all">Todos os tipos</option>
+                <option value="impressora">Impressoras</option>
+                <option value="camera">Câmeras</option>
+                <option value="antena">Antenas</option>
+                <option value="outro">Outros</option>
+              </select>
+            </label>
+            <div class="chips" id="device-status-chips" role="group" aria-label="Filtrar por status">
+              <button type="button" class="chip active" data-status="all">Todos</button>
+              <button type="button" class="chip" data-status="up">No ar</button>
+              <button type="button" class="chip" data-status="down">Fora do ar</button>
+              <button type="button" class="chip" data-status="unknown">Sem leitura</button>
             </div>
           </div>
 
