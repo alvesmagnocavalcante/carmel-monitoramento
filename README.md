@@ -16,7 +16,8 @@ fastapi dev main.py --port 8009   # dashboard em http://localhost:8009
 
 | Variável | Descrição |
 |---|---|
-| `AGENT_TOKEN` | Token dos agentes. Também é a chave de gestão (editar/excluir no dashboard). |
+| `AGENT_TOKEN` | Token dos agentes (heartbeats). |
+| `MANAGEMENT_PASSWORD` | Senha para editar/excluir no dashboard. |
 | `DATABASE_PATH` | Arquivo SQLite local, usado só sem Turso (padrão `api/monitor.db`). |
 | `TURSO_DATABASE_URL` / `TURSO_AUTH_TOKEN` | Quando definidas, substituem o SQLite. Sempre juntas. |
 | `METRICS_RETENTION_DAYS` | Dias de histórico mantidos (padrão 14, `0` desativa a limpeza). |
