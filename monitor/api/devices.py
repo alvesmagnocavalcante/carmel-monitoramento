@@ -73,7 +73,12 @@ class Devices:
     def initialize(self) -> None:
         """Cria a tabela (se não existir) e carrega os dispositivos. Chamado quando a API sobe."""
         with self.database.connect() as connection:
-            connection.executescript(DEVICES_SCHEMA)
+            # No PostgreSQL o REAL tem só 4 bytes; DOUBLE PRECISION mantém a mesma precisão do SQLite.
+            connection.executescript(
+                DEVICES_SCHEMA.replace("REAL", "DOUBLE PRECISION")
+                if self.database.backend == "postgres"
+                else DEVICES_SCHEMA
+            )
         self._reload()
 
     def _reload(self, now: datetime | None = None) -> None:
@@ -290,7 +295,7 @@ class Devices:
                 f"""
                 WITH v(id, status, latency_ms, last_checked_at, status_since) AS (VALUES {values})
                 UPDATE devices
-                SET status = v.status, latency_ms = v.latency_ms,
+                SET status = v.status, latency_ms = CAST(v.latency_ms AS DOUBLE PRECISION),
                     last_checked_at = v.last_checked_at, status_since = v.status_since
                 FROM v WHERE devices.id = v.id
                 """,

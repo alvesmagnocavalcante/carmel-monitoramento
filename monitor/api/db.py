@@ -4,12 +4,18 @@ Guarda dois tipos de dado:
   - agents  : um registro por computador monitorado (nome, grupo, sistema...).
   - metrics : uma linha por heartbeat recebido (CPU, memória, disco, rede, uptime...).
 
-Funciona com dois bancos, escolhidos pelas variáveis de ambiente (ver Database.from_environment):
-  - SQLite local (arquivo), usado em desenvolvimento;
-  - Turso (SQLite na nuvem), usado em produção.
+Funciona com três bancos, escolhidos pelas variáveis de ambiente (ver Database.from_environment):
+  - PostgreSQL (DATABASE_URL), usado quando a API roda em servidor próprio;
+  - Turso (SQLite na nuvem), usado na hospedagem anterior;
+  - SQLite local (arquivo), usado em desenvolvimento.
 
 Regra de ouro deste arquivo: no Turso cada comando SQL é uma ida à rede, e as idas se enfileiram.
-Por isso tudo aqui tenta fazer o MÍNIMO de comandos por requisição.
+Por isso tudo aqui tenta fazer o MÍNIMO de comandos por requisição (no PostgreSQL local isso
+também ajuda, só que pesa bem menos).
+
+Os três bancos falam quase o mesmo SQL. As poucas diferenças (tipos das colunas, comparação com
+NULL, ordem sem diferenciar maiúsculas, agrupamento por tempo) ficam isoladas nas constantes e
+nas funções "_..._sql" abaixo, escolhidas por `self.backend`.
 """
 
 import json
@@ -69,6 +75,42 @@ CREATE INDEX IF NOT EXISTS idx_metrics_agent_received_at
 ON metrics(agent_id, received_at);
 """
 
+# Mesma estrutura para o PostgreSQL. Diferenças: o id automático é BIGSERIAL, os decimais são
+# DOUBLE PRECISION (o REAL do Postgres tem só 4 bytes) e os contadores de bytes e o uptime são
+# BIGINT (um contador de rede passa de 2 bilhões, o limite do INTEGER do Postgres).
+# As datas continuam sendo texto ISO 8601 em UTC, como nos outros bancos.
+POSTGRES_SCHEMA = """
+CREATE TABLE IF NOT EXISTS agents (
+    id TEXT PRIMARY KEY,
+    group_name TEXT NOT NULL DEFAULT 'Sem grupo',
+    name TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    last_seen TEXT,
+    hostname TEXT,
+    os TEXT,
+    expected_interval_s INTEGER NOT NULL DEFAULT 30 CHECK (expected_interval_s > 0),
+    system_info TEXT
+);
+
+CREATE TABLE IF NOT EXISTS metrics (
+    id BIGSERIAL PRIMARY KEY,
+    agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+    received_at TEXT NOT NULL,
+    agent_timestamp TEXT,
+    cpu_percent DOUBLE PRECISION NOT NULL,
+    memory_percent DOUBLE PRECISION NOT NULL,
+    disk_percent DOUBLE PRECISION NOT NULL,
+    temp_c DOUBLE PRECISION,
+    net_bytes_sent BIGINT NOT NULL,
+    net_bytes_recv BIGINT NOT NULL,
+    uptime_s BIGINT NOT NULL,
+    volumes TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_metrics_agent_received_at
+ON metrics(agent_id, received_at);
+"""
+
 
 # ---------- Funções auxiliares (datas e linhas do banco) ----------
 
@@ -104,6 +146,44 @@ def row_as_dict(cursor: Any) -> dict[str, Any] | None:
     return dict(zip(columns, row, strict=True)) if row else None
 
 
+class PostgresConnection:
+    """Faz uma conexão do PostgreSQL (psycopg) se comportar como as do SQLite/Turso.
+
+    O resto do código escreve `connection.execute(sql, params)` com "?" nos valores, como no SQLite.
+    Aqui o "?" vira "%s" (o marcador do psycopg) e `executescript` roda vários comandos de uma vez.
+    A conexão usa ClientCursor: os valores são colocados no texto do comando pelo próprio psycopg
+    (com escape), em vez de enviados em separado. Assim um NULL ou um texto num INSERT ... SELECT
+    nunca fica com tipo indefinido, e os comandos continuam idênticos aos dos outros bancos.
+    """
+
+    def __init__(self, url: str) -> None:
+        import psycopg  # importado só aqui: não é necessário em desenvolvimento com SQLite
+
+        self._connection = psycopg.connect(
+            url, cursor_factory=psycopg.ClientCursor, connect_timeout=10
+        )
+
+    def execute(self, sql: str, params: Any = None) -> Any:
+        if params is None or len(params) == 0:
+            # Sem valores: o comando vai como está ("%" e "?" literais não precisam de cuidado).
+            return self._connection.execute(sql)
+        # Com valores: "%" literal vira "%%" e cada "?" vira "%s".
+        return self._connection.execute(sql.replace("%", "%%").replace("?", "%s"), tuple(params))
+
+    def executescript(self, script: str) -> None:
+        # Vários comandos separados por ";" em uma só ida (sem valores, o psycopg aceita).
+        self._connection.execute(script)
+
+    def commit(self) -> None:
+        self._connection.commit()
+
+    def rollback(self) -> None:
+        self._connection.rollback()
+
+    def close(self) -> None:
+        self._connection.close()
+
+
 class Database:
     """Tudo o que a API faz no banco. Cada método abre sua própria conexão curta."""
 
@@ -113,16 +193,19 @@ class Database:
         *,
         turso_url: str | None = None,
         turso_auth_token: str | None = None,
+        database_url: str | None = None,
         connection_factory: Callable[[], Any] | None = None,
         retention_days: int = DEFAULT_RETENTION_DAYS,
     ) -> None:
         self.path = str(path)
         self.turso_url = turso_url
         self.turso_auth_token = turso_auth_token
+        self.database_url = database_url
         # Permite injetar uma conexão pronta (usado nos testes).
         self.connection_factory = connection_factory
-        # "turso" quando há URL do Turso; senão "sqlite". Alguns comandos só valem num dos dois.
-        self.backend = "turso" if turso_url else "sqlite"
+        # "postgres" quando há DATABASE_URL, "turso" quando há URL do Turso; senão "sqlite".
+        # Alguns comandos só valem num dos bancos.
+        self.backend = "postgres" if database_url else "turso" if turso_url else "sqlite"
         self.retention_days = retention_days
         # Quando a limpeza do histórico rodou pela última vez (None = ainda não rodou).
         self._last_purge: datetime | None = None
@@ -134,6 +217,9 @@ class Database:
     @classmethod
     def from_environment(cls, default_path: str | Path) -> "Database":
         """Monta o Database a partir das variáveis de ambiente (ver README)."""
+        # DATABASE_URL (PostgreSQL, ex.: postgresql://usuario:senha@host:5432/banco) tem prioridade
+        # sobre o Turso e sobre o arquivo SQLite.
+        database_url = os.getenv("DATABASE_URL", "").strip()
         turso_url = os.getenv("TURSO_DATABASE_URL", "").strip()
         turso_auth_token = os.getenv("TURSO_AUTH_TOKEN", "").strip()
         # URL e token do Turso só fazem sentido juntos; um sem o outro é erro de configuração.
@@ -145,15 +231,18 @@ class Database:
             os.getenv("DATABASE_PATH", str(default_path)),
             turso_url=turso_url or None,
             turso_auth_token=turso_auth_token or None,
+            database_url=database_url or None,
             retention_days=int(
                 os.getenv("METRICS_RETENTION_DAYS", DEFAULT_RETENTION_DAYS)
             ),
         )
 
     def _open_connection(self) -> Any:
-        # Abre a conexão certa: a injetada (testes), a do Turso (produção) ou um arquivo SQLite.
+        # Abre a conexão certa: a injetada (testes), a do PostgreSQL, a do Turso ou um arquivo SQLite.
         if self.connection_factory:
             return self.connection_factory()
+        if self.database_url:
+            return PostgresConnection(self.database_url)
         if self.turso_url:
             # Importado só aqui: o libsql não é necessário em desenvolvimento com SQLite.
             import libsql
@@ -175,11 +264,11 @@ class Database:
             connection.execute("PRAGMA foreign_keys=ON")
         try:
             yield connection
-            # O Turso já confirma cada comando sozinho (autocommit); só o SQLite precisa do commit.
-            if self.backend == "sqlite":
+            # O Turso já confirma cada comando sozinho (autocommit); SQLite e PostgreSQL precisam do commit.
+            if self.backend != "turso":
                 connection.commit()
         except Exception:
-            if self.backend == "sqlite":
+            if self.backend != "turso":
                 connection.rollback()
             raise
         finally:
@@ -195,7 +284,7 @@ class Database:
                 # WAL permite ler enquanto se grava; NORMAL reduz esperas de disco sem risco real aqui.
                 connection.execute("PRAGMA journal_mode=WAL")
                 connection.execute("PRAGMA synchronous=NORMAL")
-            connection.executescript(SCHEMA)
+            connection.executescript(POSTGRES_SCHEMA if self.backend == "postgres" else SCHEMA)
             # Migração: bancos criados por versões antigas não têm algumas colunas.
             agent_columns = self._columns(connection, "agents")
             if "token_hash" in agent_columns:  # coluna legada, nunca usada
@@ -213,10 +302,32 @@ class Database:
             ):
                 self._known_agents[row.pop("id")] = (row, now)
 
-    @staticmethod
-    def _columns(connection: Any, table: str) -> set[str]:
+    def _columns(self, connection: Any, table: str) -> set[str]:
         # Nomes das colunas de uma tabela (usado nas migrações).
+        if self.backend == "postgres":
+            rows = connection.execute(
+                "SELECT column_name FROM information_schema.columns "
+                "WHERE table_schema = current_schema() AND table_name = ?",
+                (table,),
+            ).fetchall()
+            return {row[0] for row in rows}
         return {row[1] for row in connection.execute(f"PRAGMA table_info({table})").fetchall()}
+
+    def _same_value_sql(self) -> str:
+        # "Igual ao valor informado, inclusive quando os dois são NULL". SQLite: "IS ?";
+        # PostgreSQL: "IS NOT DISTINCT FROM ?" (o "IS ?" só existe no SQLite).
+        return "IS NOT DISTINCT FROM ?" if self.backend == "postgres" else "IS ?"
+
+    def _name_order_sql(self) -> str:
+        # Ordem alfabética sem diferenciar maiúsculas de minúsculas.
+        return "LOWER(a.name)" if self.backend == "postgres" else "a.name COLLATE NOCASE"
+
+    def _time_bucket_sql(self) -> str:
+        # Número do "balde" de tempo de cada medição: segundos desde 1970 divididos pelo tamanho do
+        # balde (o "?" recebe esse tamanho). A data é um texto ISO; cada banco a converte do seu jeito.
+        if self.backend == "postgres":
+            return "CAST(EXTRACT(EPOCH FROM CAST(received_at AS TIMESTAMPTZ)) AS BIGINT) / ?"
+        return "CAST(strftime('%s', received_at) AS INTEGER) / ?"
 
     @staticmethod
     def _agent_exists(connection: Any, agent_id: str) -> bool:
@@ -339,9 +450,9 @@ class Database:
                 ) SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
                 WHERE NOT EXISTS (
                     SELECT 1 FROM metrics
-                    WHERE agent_id = ? AND received_at >= ? AND agent_timestamp IS ?
+                    WHERE agent_id = ? AND received_at >= ? AND agent_timestamp {same}
                 )
-                """,
+                """.format(same=self._same_value_sql()),
                 (
                     payload["agent_id"],
                     to_db_timestamp(received_at),
@@ -415,7 +526,7 @@ class Database:
                         LIMIT 1
                     )
                     {where}
-                    ORDER BY a.name COLLATE NOCASE
+                    ORDER BY {self._name_order_sql()}
                     """,
                     params,
                 )
@@ -499,7 +610,7 @@ class Database:
             bucket_s = max(1, -(-minutes * 60 // MAX_CHART_POINTS))
             rows = rows_as_dicts(
                 connection.execute(
-                    """
+                    f"""
                     SELECT MAX(received_at) AS received_at,
                            MAX(agent_timestamp) AS agent_timestamp,
                            AVG(cpu_percent) AS cpu_percent,
@@ -511,7 +622,7 @@ class Database:
                            MAX(uptime_s) AS uptime_s
                     FROM metrics
                     WHERE agent_id = ? AND received_at >= ?
-                    GROUP BY CAST(strftime('%s', received_at) AS INTEGER) / ?
+                    GROUP BY {self._time_bucket_sql()}
                     ORDER BY received_at ASC
                     """,
                     (agent_id, cutoff, bucket_s),

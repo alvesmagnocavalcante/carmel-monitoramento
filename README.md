@@ -18,13 +18,51 @@ fastapi dev main.py --port 8009   # dashboard em http://localhost:8009
 |---|---|
 | `AGENT_TOKEN` | Token dos agentes (heartbeats). |
 | `MANAGEMENT_PASSWORD` | Senha para editar/excluir no dashboard. |
-| `DATABASE_PATH` | Arquivo SQLite local, usado só sem Turso (padrão `api/monitor.db`). |
-| `TURSO_DATABASE_URL` / `TURSO_AUTH_TOKEN` | Quando definidas, substituem o SQLite. Sempre juntas. |
+| `DATABASE_URL` | PostgreSQL (`postgresql://usuario:senha@host:5432/banco`). Tem prioridade sobre as duas linhas abaixo. |
+| `DATABASE_PATH` | Arquivo SQLite local, usado só sem PostgreSQL e sem Turso (padrão `api/monitor.db`). |
+| `TURSO_DATABASE_URL` / `TURSO_AUTH_TOKEN` | Quando definidas (e sem `DATABASE_URL`), substituem o SQLite. Sempre juntas. |
 | `METRICS_RETENTION_DAYS` | Dias de histórico mantidos (padrão 14, `0` desativa a limpeza). |
 | `CORS_ORIGINS` | Origens permitidas para chamadas de outro site (padrão `localhost:8009`). O dashboard não precisa. |
 
-Testes: `cd monitor/api && python -m unittest test_db test_devices`.
-Deploy: `cd monitor/api && fastapi deploy`.
+Testes: `cd monitor/api && python -m unittest test_db test_devices`. Os testes de PostgreSQL (`test_postgres`) só rodam com `TEST_DATABASE_URL` apontando para um banco **de teste** (eles apagam as tabelas).
+Deploy no FastAPI Cloud: `cd monitor/api && fastapi deploy` (sempre de dentro de `monitor/api`).
+
+## Rodar em servidor próprio (Docker + PostgreSQL)
+
+A API roda em um container, atrás do Caddy (HTTPS automático), e usa um PostgreSQL que já exista em outro container. Arquivos em `monitor/deploy/` e `monitor/api/Dockerfile`.
+
+```
+agentes --HTTPS--> Caddy (80/443) --> API (container) --> PostgreSQL (outro container)
+```
+
+1. **Banco**: no container do PostgreSQL crie um usuário e um banco só para este sistema:
+   ```sql
+   CREATE USER monitor WITH PASSWORD 'uma-senha-forte';
+   CREATE DATABASE monitor OWNER monitor;
+   ```
+   Para organizar por **schema** (um banco compartilhado, um schema por aplicação), crie o schema e fixe-o como padrão do usuário; as tabelas vão para ele, sem mudar nada na API (testado):
+   ```sql
+   -- conectado ao banco compartilhado (ex.: \c apps)
+   CREATE SCHEMA monitoramento AUTHORIZATION monitor;
+   ALTER ROLE monitor SET search_path = monitoramento;
+   ```
+2. **Endereço HTTPS**: o token dos agentes não pode trafegar sem HTTPS. Com domínio, crie um registro DNS (ex.: `monitor.carmelhoteis.com.br`) apontando para o IP estático da instância. Sem domínio, use o IP com hífens e `.sslip.io` (IP `3.90.12.45` → `3-90-12-45.sslip.io`), que também recebe certificado válido.
+3. **Firewall do Lightsail** (aba *Networking*): libere as portas **80** e **443** (e mantenha a 22 só para quem administra).
+4. **Subir**: copie o projeto para a instância e, em `monitor/deploy`:
+   ```bash
+   cp .env.example .env        # preencha: tokens, DATABASE_URL, PG_NETWORK e SITE_ADDRESS
+   docker compose up -d --build
+   docker compose logs -f api
+   ```
+   `PG_NETWORK` é o nome da rede do Docker onde o PostgreSQL está (`docker inspect <container-do-postgres>`), e o host do `DATABASE_URL` é o nome desse container.
+5. **Copiar os dados** do Turso (hosts, dispositivos e os últimos 2 dias de medições) para o PostgreSQL, uma única vez:
+   ```bash
+   docker compose run --rm -e TURSO_DATABASE_URL=... -e TURSO_AUTH_TOKEN=... api \
+       python migrate_to_postgres.py --destino "$DATABASE_URL"
+   ```
+6. **Trocar os agentes**: depois de conferir o painel no endereço novo, mude `monitor_agent_api_url` no Semaphore e rode o template em todos os hosts. Mantenha a API antiga no ar até todos terem trocado.
+
+A API roda com **um processo só** (o estado dos dispositivos e os caches ficam em memória). O backup é o do PostgreSQL (`pg_dump`).
 
 ## Agente
 

@@ -1,0 +1,54 @@
+# API de monitoramento + proxy HTTPS (Caddy), para rodar em um servidor próprio (ex.: Lightsail).
+# O banco NÃO está aqui: usa o PostgreSQL que já roda em outro container (veja o README, seção
+# "Rodar em servidor próprio"). Uso:
+#
+#   cp .env.example .env     # preencha os valores
+#   docker compose up -d --build
+#   docker compose logs -f api
+#
+services:
+  api:
+    build: ../api
+    restart: unless-stopped
+    environment:
+      # Token dos agentes (o mesmo que eles já usam hoje; senão dá 401).
+      AGENT_TOKEN: ${AGENT_TOKEN:?defina AGENT_TOKEN no .env}
+      # Senha do painel, pedida ao editar ou excluir hosts e dispositivos (a mesma de hoje).
+      MANAGEMENT_PASSWORD: ${MANAGEMENT_PASSWORD:?defina MANAGEMENT_PASSWORD no .env}
+      # Banco PostgreSQL. O host é o nome do container/serviço do Postgres na rede PG_NETWORK.
+      DATABASE_URL: ${DATABASE_URL:?defina DATABASE_URL no .env}
+      METRICS_RETENTION_DAYS: ${METRICS_RETENTION_DAYS:-14}
+    # Sem "ports": a API só é alcançada pelo Caddy, dentro da rede do Docker.
+    networks:
+      - internal
+      - pg
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      - api
+    ports:
+      - "80:80"    # usada pelo Let's Encrypt para validar o endereço e redirecionar para HTTPS
+      - "443:443"
+    environment:
+      # Endereço público (sem https://), ex.: monitor.carmelhoteis.com.br ou 3-90-12-45.sslip.io
+      SITE_ADDRESS: ${SITE_ADDRESS:?defina SITE_ADDRESS no .env}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      # Guarda o certificado: sem isso ele seria pedido de novo a cada reinício (e há limite de pedidos).
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      - internal
+
+networks:
+  internal:
+  # Rede onde o PostgreSQL já está. Descubra o nome com: docker inspect <container-do-postgres>
+  pg:
+    external: true
+    name: ${PG_NETWORK:?defina PG_NETWORK no .env}
+
+volumes:
+  caddy_data:
+  caddy_config:

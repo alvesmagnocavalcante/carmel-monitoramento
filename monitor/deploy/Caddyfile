@@ -1,0 +1,6 @@
+# Proxy HTTPS: recebe as conexões da internet e repassa para a API.
+# O certificado do Let's Encrypt é pedido e renovado sozinho para o endereço de SITE_ADDRESS.
+{$SITE_ADDRESS} {
+	encode zstd gzip
+	reverse_proxy api:8000
+}
