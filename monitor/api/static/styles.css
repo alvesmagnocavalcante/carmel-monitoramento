@@ -39,9 +39,9 @@
   /* Arredondamento dos cantos: cartões (--radius) e itens internos menores (--radius-sm). */
   --radius: 14px;
   --radius-sm: 10px;
-  /* Fontes: Plus Jakarta Sans no texto e Cormorant (serifada) nos números grandes e títulos de destaque. */
-  --sans: "Plus Jakarta Sans", Arial, sans-serif;
-  --serif: Cormorant, Georgia, serif;
+  /* Inter no texto da interface e Lora nos números de destaque. */
+  --sans: Inter, Arial, sans-serif;
+  --serif: Lora, Georgia, serif;
   /* Avisa o navegador do tema, para que barras de rolagem e campos nativos acompanhem. */
   color-scheme: light;
   font-family: var(--sans);
