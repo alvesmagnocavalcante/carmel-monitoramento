@@ -9,3 +9,6 @@ wheels/
 
 # Virtual environments
 .venv
+
+# Chave privada do deploy
+key.pem
